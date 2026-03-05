@@ -1,0 +1,90 @@
+@font-face {
+  font-family: 'OpenAI Sans';
+  src: url('/fonts/OpenAISans-Regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'OpenAI Sans';
+  src: url('/fonts/OpenAISans-Medium.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'OpenAI Sans';
+  src: url('/fonts/OpenAISans-Semibold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'OpenAI Sans';
+  src: url('/fonts/OpenAISans-Bold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --font-openai: 'OpenAI Sans', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
+  --studio-white: #ffffff;
+  --graphite-ink: #101828;
+  --signal-red: #c4281c;
+  --orbit-blue: #0055bf;
+  --bright-yellow: #ffd500;
+  --builder-green: #00c853;
+  --warm-board: #fff9ea;
+  --panel-shell: #f7f3ec;
+  --peg-shadow: #d9e0e7;
+  --mat-green: #dff0d7;
+  --night-bench: #121826;
+  --night-shell: #1a2235;
+  font-family: var(--font-openai);
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--graphite-ink);
+  background:
+    radial-gradient(circle at 12% 14%, rgba(0, 85, 191, 0.08), transparent 20%),
+    radial-gradient(circle at 82% 12%, rgba(196, 40, 28, 0.07), transparent 24%),
+    radial-gradient(circle at 78% 78%, rgba(255, 213, 0, 0.1), transparent 18%),
+    linear-gradient(180deg, #f8fbfe 0%, #eef3f8 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-openai);
+  background: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 4px solid rgba(0, 85, 191, 0.4);
+  outline-offset: 4px;
+}
