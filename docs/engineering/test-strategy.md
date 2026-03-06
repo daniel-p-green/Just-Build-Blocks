@@ -1,6 +1,6 @@
-# Test Strategy: Just Build with Blocks MVP
+# Test Strategy: Just Build with Blocks Signature Product
 
-Date: 2026-03-05
+Date: 2026-03-06
 Repository: Just-Build-Blocks
 Working stack: React, Vite, TypeScript, Vitest
 
@@ -14,39 +14,43 @@ Working stack: React, Vite, TypeScript, Vitest
 
 ### Unit
 
-- Core business logic: palette quantization, block grid generation, block counts, story arc generation.
-- Validation rules: file type and image decode checks where logic can be isolated cleanly.
-- Error handling: transparent pixel handling and empty-grid fallbacks.
+- Canonical model logic: input normalization, set spec generation, model compilation, bounds, manifests, and validation reports.
+- Export logic: deterministic `.mpd`, `.io`, and `instructions.json` generation.
+- Rendering contracts: scene-pack derivation, build phases, sound schedules, and instruction data generation.
 
 ### Integration
 
-- Data boundaries: uploaded file -> image decode -> block grid -> hero render data.
-- Service boundaries: local-only browser flow for MVP, no required external API integration.
-- State transitions: idle -> loading -> generated -> exportable.
+- Data boundaries: image input or prompt input -> canonical model -> scene data -> exports.
+- Service boundaries: prompt generation server path and local-only image path both feed the same downstream contract.
+- State transitions: idle -> loading -> generated -> exportable -> renderable.
 
 ### End-to-End
 
-- Primary user flow: upload a supported logo and receive a block-built still plus scene data.
-- Critical edge flow: upload an asset with transparency and confirm the output stays visually coherent.
+- Primary user flow: generate a set from image input, inspect box and studio, and download the export bundle.
+- Prompt flow: generate a set from a brand name or short prompt and reach the same downstream surfaces.
+- Quality flow: verify the first frame, instruction surface, and film render are all driven by the same set data.
 
 ## Requirement-to-Test Mapping
 
 | PRD criterion | Test level | Test case id |
 |---|---|---|
-| Block grid generation from uploaded logo | Unit | UT-BLOCK-001 |
-| Transparent pixel handling | Unit | UT-BLOCK-002 |
-| Three story arcs generated from transformed output | Unit | UT-STORY-001 |
-| End-to-end upload to render flow | Manual / integration | IT-FLOW-001 |
+| Deterministic set spec and model generation | Unit | UT-MODEL-001 |
+| Export bundle consistency across manifests and model files | Unit | UT-EXPORT-001 |
+| Input normalization for image and prompt paths | Integration | IT-INPUT-001 |
+| Set to box/studio/instructions flow | Integration | IT-FLOW-001 |
+| Film render and sound-cue contract | Manual / integration | IT-FILM-001 |
 
 ## Test Data and Fixtures
 
-- Required fixtures: synthetic pixel grids that represent simple logos and transparent backgrounds.
-- Synthetic data needs: quadrant-based color maps and alpha-heavy logo samples.
-- Cleanup strategy: no persistent backend state in MVP; test data stays local to the test runner.
+- Required fixtures: synthetic pixel grids, transparent images, simple logo inputs, and prompt concepts that map to known outputs.
+- Synthetic data needs: deterministic assemblies, stable color bins, and fixed export snapshots for regression checking.
+- Cleanup strategy: no persistent backend state required for most tests; fixture outputs stay local to the test runner.
 
 ## Release Verification Checklist
 
-- [ ] All new/changed behavior covered by tests
+- [ ] All new or changed behavior covered by tests where practical
 - [ ] Regression tests pass
 - [ ] No flaky tests introduced
+- [ ] Export bundle verified for consistency
+- [ ] Remotion render path reviewed manually
 - [ ] Risk summary written

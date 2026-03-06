@@ -1,18 +1,21 @@
 # Just Build with Blocks Sound Direction
 
-Date: 2026-03-05
+Date: 2026-03-06
 
 ## Intent
 
-Sound should make the system feel tactile, curious, and original. The audio must suggest hands-on building without leaning on any iconic toy-brand audio memory.
+Sound should make the product feel tactile, premium, and complete. The audio must support the app and the Remotion 3D film as one product system, not as separate demo layers.
+
+The audio should suggest hands-on building and shelf-ready product drama without leaning on copied toy-brand sonic memory.
 
 ## Rules
 
+- The sound design must feel original or safely licensed
 - One sacred spoken line is allowed and encouraged
 - No constant narration
 - No triumphant trailer music
 - No copied toy-click clichés that feel recognizably borrowed
-- Use original or safely licensed cues only
+- Every cue family should map to a product moment, not just a random transition
 
 ## Cue Families
 
@@ -21,47 +24,59 @@ Sound should make the system feel tactile, curious, and original. The audio must
 - Feeling: intake, preparation, hand meeting surface
 - Sources: soft paper lift, cloth swipe, subtle air movement
 
-### Quantize
+### Sorting
 
-- Feeling: sorting and finding the right piece
-- Sources: tiny ticks, dry taps, light index-card shuffles
+- Feeling: selection, ordering, possibility
+- Sources: tiny ticks, dry taps, tray movement, restrained shuffle
 
-### Build
+### Snap
 
 - Feeling: satisfying assembly
 - Sources: layered plastic snaps, plate slides, soft knocks
 
-### Set Box Reveal
+### Resolve
 
-- Feeling: first gasp, product-on-shelf electricity
-- Sources: fuller snap, confident lift, quick bright bloom
+- Feeling: silhouette becoming unmistakable
+- Sources: fuller click cluster, soft harmonic bloom, short held resonance
 
 ### Sacred Line
 
 - Feeling: intimate, remembered, quietly certain
 - Sources: one warm spoken line, lightly supported, never salesy
 
-### Montage
+### Quiet Possibility
 
-- Feeling: possibilities multiplying
-- Sources: rhythmic click lattice, restrained percussive bed, curious pulse
+- Feeling: the set opening into something larger than the object itself
+- Sources: restrained pulse, warm percussive bed, subtle tonal lift
 
-### Resolve
+### Ending Settle
 
-- Feeling: quiet confidence
+- Feeling: quiet confidence after the reveal
 - Sources: soft mechanical settle, muted resonance, gentle tail
 
-## Music Bed
+## Film structure
+
+The flagship film should read as one complete product reveal:
+
+- `0-5s`: input and anticipation
+- `5-12s`: sorting and early assembly
+- `12-20s`: structure and silhouette resolve
+- `20-30s`: premium hero object reveal
+- `30-40s`: studio and instruction crossover
+- `40-45s`: set-box resolve and closing line
+
+## Music bed
 
 - minimal
 - percussive
 - warm
-- curious
+- precise
 - never bombastic
 
-## Sync Rules
+## Sync rules
 
 - each major visual snap gets a tactile cue
-- the set-box reveal cue should land exactly when the cover resolves
-- montage rhythm should help scene transitions, not dominate them
-- the ending should decay gently, leaving space rather than climaxing into ad-language
+- sorting should sound ordered, not chaotic
+- the hero reveal should land on the exact frame where the object resolves
+- instruction and studio moments should inherit the same cue language, not start over stylistically
+- the ending should decay gently and feel finished rather than crescendo into ad language
