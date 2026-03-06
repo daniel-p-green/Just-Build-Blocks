@@ -89,7 +89,7 @@ const drawStudBar = (
   }
 };
 
-const drawBlock = (
+const drawStandingBrick = (
   context: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -97,64 +97,90 @@ const drawBlock = (
   depth: number,
   color: string,
 ) => {
-  const radius = Math.max(8, size * 0.18);
+  const radius = Math.max(3, size * 0.12);
+  const topLift = depth * 0.62;
+  const sideInset = depth * 0.8;
+  const frontColor = color;
+  const topColor = mix(color, '#ffffff', color === '#FFFFFF' ? 0.04 : 0.2);
+  const sideColor = mix(color, '#101828', color === '#FFFFFF' ? 0.18 : 0.26);
+  const studColor = mix(color, '#ffffff', color === '#FFFFFF' ? 0.02 : 0.16);
 
   context.save();
   context.translate(x, y);
 
-  drawRoundedRect(context, 0, depth, size, size, radius);
-  context.fillStyle = 'rgba(16, 24, 40, 0.2)';
+  context.beginPath();
+  context.moveTo(0, 0);
+  context.lineTo(sideInset, -topLift);
+  context.lineTo(size + sideInset, -topLift);
+  context.lineTo(size, 0);
+  context.closePath();
+  context.fillStyle = topColor;
+  context.fill();
+
+  context.beginPath();
+  context.moveTo(size, 0);
+  context.lineTo(size + sideInset, -topLift);
+  context.lineTo(size + sideInset, size - topLift);
+  context.lineTo(size, size);
+  context.closePath();
+  context.fillStyle = sideColor;
   context.fill();
 
   drawRoundedRect(context, 0, 0, size, size, radius);
-  context.fillStyle = color;
+  context.fillStyle = frontColor;
   context.fill();
 
-  drawRoundedRect(context, size * 0.06, size * 0.06, size * 0.88, size * 0.18, radius * 0.7);
-  context.fillStyle = rgba('#ffffff', 0.26);
+  drawRoundedRect(context, size * 0.08, size * 0.08, size * 0.84, size * 0.16, radius * 0.65);
+  context.fillStyle = rgba('#ffffff', color === '#FFFFFF' ? 0.08 : 0.24);
   context.fill();
 
   const studRadius = size * 0.11;
-  const studs = [
-    [size * 0.34, size * 0.34],
-    [size * 0.66, size * 0.34],
-    [size * 0.34, size * 0.66],
-    [size * 0.66, size * 0.66],
-  ] as const;
+  const studs = size >= 12
+    ? ([
+        [size * 0.28, -topLift * 0.5],
+        [size * 0.52, -topLift * 0.5],
+        [size * 0.76, -topLift * 0.5],
+      ] as const)
+    : ([] as const);
 
   studs.forEach(([studX, studY]) => {
     context.beginPath();
     context.arc(studX, studY, studRadius, 0, Math.PI * 2);
-    context.fillStyle = mix(color, '#ffffff', 0.18);
+    context.fillStyle = studColor;
     context.fill();
     context.beginPath();
     context.arc(studX - studRadius * 0.18, studY - studRadius * 0.18, studRadius * 0.52, 0, Math.PI * 2);
-    context.fillStyle = rgba('#ffffff', 0.24);
+    context.fillStyle = rgba('#ffffff', color === '#FFFFFF' ? 0.12 : 0.24);
     context.fill();
   });
 
   context.restore();
 };
 
-const projectCells = (
+const layoutStandingCells = (
   cells: BlockCell[],
   columns: number,
   rows: number,
   area: { x: number; y: number; width: number; height: number },
 ) => {
-  const margin = 0.16;
+  const margin = 0.18;
+  const depthInset = 0.92;
   const size = Math.min(
-    area.width / Math.max(columns + margin * 2, 1),
-    area.height / Math.max(rows + margin * 2, 1.2),
+    area.width / Math.max(columns + margin * 2 + depthInset, 1),
+    area.height / Math.max(rows + margin * 2 + depthInset, 1.2),
   );
-  const startX = area.x + (area.width - columns * size) / 2;
-  const startY = area.y + (area.height - rows * size) / 2;
+  const depth = Math.max(8, size * 0.34);
+  const modelWidth = columns * size + depth;
+  const modelHeight = rows * size + depth;
+  const startX = area.x + (area.width - modelWidth) / 2;
+  const startY = area.y + (area.height - modelHeight) / 2 + depth * 0.35;
 
   return cells.map((cell) => ({
     ...cell,
     px: startX + cell.x * size,
     py: startY + cell.y * size,
     size,
+    depth,
   }));
 };
 
@@ -178,7 +204,7 @@ export const drawHeroCanvas = (
   const graphite = BLOCK_TABLE_COLORS.graphiteInk;
 
   context.clearRect(0, 0, width, height);
-  context.fillStyle = '#f6f9fc';
+  context.fillStyle = '#edf3f9';
   context.fillRect(0, 0, width, height);
 
   context.save();
@@ -191,8 +217,18 @@ export const drawHeroCanvas = (
   context.restore();
 
   drawRoundedRect(context, 88, 82, width - 176, height - 164, 28);
-  context.fillStyle = primaryBlue;
+  const boxGradient = context.createLinearGradient(88, 82, width - 88, height - 82);
+  boxGradient.addColorStop(0, mix(primaryBlue, '#0b2c75', 0.06));
+  boxGradient.addColorStop(0.58, primaryBlue);
+  boxGradient.addColorStop(1, mix(primaryBlue, '#081427', 0.12));
+  context.fillStyle = boxGradient;
   context.fill();
+
+  const glow = context.createRadialGradient(width * 0.68, height * 0.32, 40, width * 0.68, height * 0.32, 420);
+  glow.addColorStop(0, rgba('#ffffff', 0.2));
+  glow.addColorStop(1, rgba('#ffffff', 0));
+  context.fillStyle = glow;
+  context.fillRect(88, 82, width - 176, height - 164);
 
   drawRoundedRect(context, 122, 118, 216, 134, 24);
   context.fillStyle = red;
@@ -242,32 +278,47 @@ export const drawHeroCanvas = (
   context.fillStyle = rgba('#ffffff', 0.82);
   drawWrappedText(context, scenePack.box.subtitle, 390, 336, 608, 40);
 
-  drawRoundedRect(context, 390, 380, 612, 188, 30);
-  context.fillStyle = rgba('#ffffff', 0.16);
+  drawRoundedRect(context, 364, 346, 692, 334, 34);
+  context.fillStyle = rgba('#ffffff', 0.08);
   context.fill();
 
-  const platformY = 625;
-  drawRoundedRect(context, 452, platformY, 462, 64, 30);
-  context.fillStyle = '#f2f6fb';
+  drawRoundedRect(context, 406, 390, 608, 224, 26);
+  context.fillStyle = 'rgba(255, 255, 255, 0.93)';
   context.fill();
-  drawStudBar(context, 484, platformY + 24, 400, '#f2f6fb');
+  context.save();
+  context.globalAlpha = 0.22;
+  drawStudBar(context, 452, 416, 516, '#dbe5ef');
+  context.restore();
 
-  const projectedCells = projectCells(scenePack.build.grid.cells, scenePack.build.grid.columns, scenePack.build.grid.rows, {
-    x: 450,
-    y: 398,
-    width: 470,
-    height: 212,
+  const plinthShadow = context.createRadialGradient(700, 610, 40, 700, 610, 220);
+  plinthShadow.addColorStop(0, 'rgba(16, 24, 40, 0.16)');
+  plinthShadow.addColorStop(1, 'rgba(16, 24, 40, 0)');
+  context.fillStyle = plinthShadow;
+  context.fillRect(470, 560, 460, 120);
+
+  const projectedCells = layoutStandingCells(scenePack.build.grid.cells, scenePack.build.grid.columns, scenePack.build.grid.rows, {
+    x: 486,
+    y: 430,
+    width: 430,
+    height: 178,
   });
 
   projectedCells
-    .sort((left, right) => left.y - right.y || left.x - right.x)
+    .sort((left, right) => right.y - left.y || left.x - right.x)
     .forEach((cell) => {
-      drawBlock(context, cell.px, cell.py, cell.size, Math.max(10, cell.size * 0.16), cell.color.hex);
+      drawStandingBrick(
+        context,
+        cell.px,
+        cell.py,
+        cell.size,
+        Math.max(8, cell.depth),
+        cell.color.hex,
+      );
     });
 
   context.fillStyle = white;
   context.font = `600 24px ${OPENAI_SANS_FAMILY}`;
-  drawWrappedText(context, scenePack.box.heroCaption, 390, 602, 612, 34);
+  drawWrappedText(context, scenePack.box.heroCaption, 388, 716, 590, 34);
 
   drawRoundedRect(context, 1060, 118, 164, 164, 28);
   context.fillStyle = rgba('#ffffff', 0.14);
@@ -293,6 +344,13 @@ export const drawHeroCanvas = (
   context.fillStyle = white;
   context.font = `700 26px ${OPENAI_SANS_FAMILY}`;
   context.fillText(scenePack.input.kind === 'prompt' ? 'FROM TEXT' : 'FROM IMAGE', 1088, 564);
+
+  drawRoundedRect(context, 1060, 644, 164, 92, 28);
+  context.fillStyle = rgba('#ffffff', 0.14);
+  context.fill();
+  context.fillStyle = white;
+  context.font = `700 22px ${OPENAI_SANS_FAMILY}`;
+  context.fillText(scenePack.setIdentity.buildId, 1088, 698);
 
   if (variant === 'poster') {
     context.fillStyle = rgba('#101828', 0.08);

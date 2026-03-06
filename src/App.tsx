@@ -3,6 +3,10 @@ import type { ChangeEvent, FormEvent } from 'react';
 
 import './App.css';
 import { buildBlockBuildFromImageData, type ImageDataLike } from './lib/block-engine';
+import { BuilderStudio3D } from './components/BuilderStudio3D';
+import { InputOnboardingShowcase } from './components/InputOnboardingShowcase';
+import { LoadingInterstitial } from './components/LoadingInterstitial';
+import { RightsConfirmationModal } from './components/RightsConfirmationModal';
 import {
   buildPromptConceptDataUrl,
   normalizeConceptInput,
@@ -11,18 +15,18 @@ import {
 } from './lib/concept-input';
 import type { RevealMode } from './lib/experience-plan';
 import { drawHeroCanvas } from './lib/hero-renderer';
+import { INPUT_GUIDE_EXAMPLES } from './lib/input-guidance';
+import { buildInstructionArtifactHtml } from './lib/instruction-artifact';
 import {
-  POSTER_FRAME_PROGRESS,
   REVEAL_DURATION_MS,
-  drawRevealFrame,
   recordRevealClip,
 } from './lib/reveal-renderer';
 import {
   VISUAL_PRESETS,
   buildScenePack,
   type ScenePack,
-  type VisualPresetId,
 } from './lib/scene-pack';
+import { buildRealSet, createIoBlob, createMpdBlob, type RealSetBuild } from './lib/set-engine';
 
 type WizardStep = 'input' | 'box' | 'studio' | 'instructions' | 'keep';
 
@@ -33,6 +37,8 @@ type SourceAsset = {
   previewUrl: string;
   imageData: ImageDataLike;
 };
+
+type PendingStartAction = 'file-picker' | 'prompt-submit';
 
 type DensityPreset = {
   id: 'chunky' | 'balanced' | 'detailed';
@@ -53,23 +59,6 @@ const DENSITY_PRESETS: DensityPreset[] = [
   { id: 'chunky', label: 'Chunky', description: 'Big block silhouette and fast read.', columns: 24 },
   { id: 'balanced', label: 'Balanced', description: 'Best overall set-box density.', columns: 36 },
   { id: 'detailed', label: 'Detailed', description: 'Sharper edges and finer tray rhythm.', columns: 48 },
-];
-
-const REVEAL_MODE_OPTIONS: Array<{
-  id: RevealMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: 'faithful',
-    label: 'Faithful',
-    description: 'Keep the set anchored tightly to the original mark.',
-  },
-  {
-    id: 'imagination',
-    label: 'Imagination',
-    description: 'Open the set into a larger world built from the same idea.',
-  },
 ];
 
 const REVEAL_AUDIO_SCHEDULE = [
@@ -227,7 +216,8 @@ const canVisitStep = (step: WizardStep, sourceAsset: SourceAsset | null, scenePa
 
 function App() {
   const heroCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const revealCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const studioCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const revealAnimationFrameRef = useRef<number | null>(null);
   const revealAudioTimerRef = useRef<number[]>([]);
   const [currentStep, setCurrentStep] = useState<WizardStep>('input');
@@ -235,11 +225,22 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sourceAsset, setSourceAsset] = useState<SourceAsset | null>(null);
   const [scenePack, setScenePack] = useState<ScenePack | null>(null);
-  const [visualPresetId, setVisualPresetId] = useState<VisualPresetId>('primary-play');
+  const [realSetBuild, setRealSetBuild] = useState<RealSetBuild | null>(null);
+  const [visualPresetId] = useState<'primary-play' | 'build-table' | 'night-shift'>('primary-play');
   const [densityColumns, setDensityColumns] = useState<number>(36);
   const [revealMode, setRevealMode] = useState<RevealMode>('faithful');
   const [revealPlaying, setRevealPlaying] = useState(false);
   const [downloadingRevealClip, setDownloadingRevealClip] = useState(false);
+  const [activeInstructionStep, setActiveInstructionStep] = useState(0);
+  const [studioExploded, setStudioExploded] = useState(false);
+  const [instructionSync, setInstructionSync] = useState(true);
+  const [studioAutoRotate, setStudioAutoRotate] = useState(false);
+  const [rightsAccepted, setRightsAccepted] = useState(false);
+  const [rightsModalOpen, setRightsModalOpen] = useState(false);
+  const [rightsAcknowledged, setRightsAcknowledged] = useState(false);
+  const [pendingStartAction, setPendingStartAction] = useState<PendingStartAction | null>(null);
+  const [activeGuideIndex, setActiveGuideIndex] = useState(0);
+  const [loadingKind, setLoadingKind] = useState<'image' | 'prompt' | null>(null);
   const [promptForm, setPromptForm] = useState({
     brandName: '',
     prompt: '',
@@ -250,6 +251,22 @@ function App() {
   const activeVisualPreset = VISUAL_PRESETS.find((preset) => preset.id === visualPresetId) ?? VISUAL_PRESETS[0]!;
   const activeDensityPreset =
     DENSITY_PRESETS.find((preset) => preset.columns === densityColumns) ?? DENSITY_PRESETS[1]!;
+
+  const cycleGuideIndex = useEffectEvent((direction: 1 | -1) => {
+    setActiveGuideIndex((current) => {
+      const next = current + direction;
+
+      if (next < 0) {
+        return INPUT_GUIDE_EXAMPLES.length - 1;
+      }
+
+      if (next >= INPUT_GUIDE_EXAMPLES.length) {
+        return 0;
+      }
+
+      return next;
+    });
+  });
 
   const clearRevealPlayback = useEffectEvent(() => {
     if (revealAnimationFrameRef.current !== null) {
@@ -262,22 +279,97 @@ function App() {
     setRevealPlaying(false);
   });
 
-  const rebuildScenePack = useEffectEvent((asset: SourceAsset, columns: number, presetId: VisualPresetId) => {
+  const queueRightsGate = useEffectEvent((action: PendingStartAction) => {
+    setPendingStartAction(action);
+    setRightsAcknowledged(false);
+    setRightsModalOpen(true);
+  });
+
+  const rebuildScenePack = useEffectEvent((asset: SourceAsset, columns: number) => {
     const build = buildBlockBuildFromImageData(asset.imageData, { columns });
+    const nextRealSet = buildRealSet({
+      brandName: asset.brandName,
+      build,
+      input: asset.input,
+    });
     const nextScenePack = buildScenePack({
       input: asset.input,
       brandName: asset.brandName,
       fileName: asset.fileName,
       build,
+      realSet: nextRealSet,
       revealMode,
-      visualPresetId: presetId,
+      visualPresetId,
     });
 
     startTransition(() => {
+      setRealSetBuild(nextRealSet);
       setScenePack(nextScenePack);
       setStatus('ready');
       setError(null);
     });
+  });
+
+  const startPromptBuild = useEffectEvent(async () => {
+    if (!promptForm.prompt.trim()) {
+      setError('Describe what you want to build first.');
+      return;
+    }
+
+    clearRevealPlayback();
+    setStatus('loading');
+    setLoadingKind('prompt');
+    setError(null);
+    setCurrentStep('input');
+    setSourceAsset(null);
+    setScenePack(null);
+    setRealSetBuild(null);
+
+    try {
+      const asset = await loadPromptAsset({
+        brandName: promptForm.brandName.trim() || 'Custom Blocks',
+        prompt: promptForm.prompt,
+      });
+      setSourceAsset(asset);
+      setActiveInstructionStep(0);
+      setPromptForm((current) => ({
+        ...current,
+        brandName: asset.brandName,
+      }));
+      setCurrentStep('box');
+    } catch (promptError) {
+      setStatus('error');
+      setError(promptError instanceof Error ? promptError.message : 'We could not build that prompt yet.');
+    }
+  });
+
+  const openFilePicker = useEffectEvent(() => {
+    fileInputRef.current?.click();
+  });
+
+  const resumePendingStartAction = useEffectEvent(() => {
+    if (pendingStartAction === 'file-picker') {
+      openFilePicker();
+    }
+
+    if (pendingStartAction === 'prompt-submit') {
+      void startPromptBuild();
+    }
+
+    setPendingStartAction(null);
+  });
+
+  const handleRightsContinue = useEffectEvent(() => {
+    setRightsAccepted(true);
+    setRightsModalOpen(false);
+    setRightsAcknowledged(false);
+    resumePendingStartAction();
+  });
+
+  const handleRightsCancel = useEffectEvent(() => {
+    setRightsModalOpen(false);
+    setRightsAcknowledged(false);
+    setPendingStartAction(null);
   });
 
   const paintHero = useEffectEvent((pack: ScenePack, variant: 'hero' | 'poster' = 'hero') => {
@@ -288,24 +380,6 @@ function App() {
     }
 
     const render = () => drawHeroCanvas(canvas, pack, { variant });
-    const fontReady = document.fonts?.ready;
-
-    if (fontReady) {
-      void fontReady.then(render);
-      return;
-    }
-
-    render();
-  });
-
-  const paintReveal = useEffectEvent((pack: ScenePack, progress: number) => {
-    const canvas = revealCanvasRef.current;
-
-    if (!canvas) {
-      return;
-    }
-
-    const render = () => drawRevealFrame(canvas, pack, progress);
     const fontReady = document.fonts?.ready;
 
     if (fontReady) {
@@ -330,16 +404,28 @@ function App() {
     clearRevealPlayback();
     setRevealPlaying(true);
     setCurrentStep('studio');
+    setInstructionSync(true);
+    setActiveInstructionStep(0);
 
     REVEAL_AUDIO_SCHEDULE.forEach((item) => {
       scheduleAudioCue(pack.audio.cueIds[item.cue], item.at, item.volume);
     });
 
     const start = performance.now();
+    const finalStepIndex = Math.max(0, pack.instructions.steps.length - 1);
+    let lastStepIndex = -1;
 
     const animate = (now: number) => {
       const progress = Math.min(1, (now - start) / REVEAL_DURATION_MS);
-      paintReveal(pack, progress);
+      const nextStepIndex = Math.min(
+        finalStepIndex,
+        Math.floor(progress * (finalStepIndex + 1)),
+      );
+
+      if (nextStepIndex !== lastStepIndex) {
+        lastStepIndex = nextStepIndex;
+        setActiveInstructionStep(nextStepIndex);
+      }
 
       if (progress < 1) {
         revealAnimationFrameRef.current = window.requestAnimationFrame(animate);
@@ -347,8 +433,8 @@ function App() {
       }
 
       revealAnimationFrameRef.current = null;
+      setActiveInstructionStep(finalStepIndex);
       setRevealPlaying(false);
-      setCurrentStep('keep');
     };
 
     revealAnimationFrameRef.current = window.requestAnimationFrame(animate);
@@ -381,7 +467,7 @@ function App() {
       return;
     }
 
-    rebuildScenePack(sourceAsset, deferredColumns, visualPresetId);
+    rebuildScenePack(sourceAsset, deferredColumns);
   }, [deferredColumns, rebuildScenePack, revealMode, sourceAsset, visualPresetId]);
 
   useEffect(() => {
@@ -390,10 +476,22 @@ function App() {
     }
 
     paintHero(scenePack);
-    if (!revealPlaying) {
-      paintReveal(scenePack, currentStep === 'keep' ? POSTER_FRAME_PROGRESS : 0.22);
+  }, [paintHero, scenePack]);
+
+  useEffect(() => {
+    if (status !== 'loading') {
+      setLoadingKind(null);
     }
-  }, [currentStep, paintHero, paintReveal, revealPlaying, scenePack]);
+  }, [status]);
+
+  const handleUploadButtonClick = () => {
+    if (!rightsAccepted) {
+      queueRightsGate('file-picker');
+      return;
+    }
+
+    openFilePicker();
+  };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -405,14 +503,17 @@ function App() {
 
     clearRevealPlayback();
     setStatus('loading');
+    setLoadingKind('image');
     setError(null);
     setCurrentStep('input');
     setSourceAsset(null);
     setScenePack(null);
+    setRealSetBuild(null);
 
     try {
       const asset = await loadSourceAsset(file);
       setSourceAsset(asset);
+      setActiveInstructionStep(0);
       setCurrentStep('box');
     } catch (uploadError) {
       setStatus('error');
@@ -423,33 +524,12 @@ function App() {
   const handlePromptSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!promptForm.prompt.trim()) {
-      setError('Describe what you want to build first.');
+    if (!rightsAccepted) {
+      queueRightsGate('prompt-submit');
       return;
     }
 
-    clearRevealPlayback();
-    setStatus('loading');
-    setError(null);
-    setCurrentStep('input');
-    setSourceAsset(null);
-    setScenePack(null);
-
-    try {
-      const asset = await loadPromptAsset({
-        brandName: promptForm.brandName.trim() || 'Custom Blocks',
-        prompt: promptForm.prompt,
-      });
-      setSourceAsset(asset);
-      setPromptForm((current) => ({
-        ...current,
-        brandName: asset.brandName,
-      }));
-      setCurrentStep('box');
-    } catch (promptError) {
-      setStatus('error');
-      setError(promptError instanceof Error ? promptError.message : 'We could not build that prompt yet.');
-    }
+    await startPromptBuild();
   };
 
   const resetBuild = () => {
@@ -459,13 +539,23 @@ function App() {
     setError(null);
     setSourceAsset(null);
     setScenePack(null);
+    setRealSetBuild(null);
     setPromptForm({
       brandName: '',
       prompt: '',
     });
-    setVisualPresetId('primary-play');
     setDensityColumns(36);
     setRevealMode('faithful');
+    setActiveInstructionStep(0);
+    setStudioExploded(false);
+    setInstructionSync(true);
+    setStudioAutoRotate(false);
+    setRightsAccepted(false);
+    setRightsModalOpen(false);
+    setRightsAcknowledged(false);
+    setPendingStartAction(null);
+    setActiveGuideIndex(0);
+    setLoadingKind(null);
   };
 
   const moveToNextStep = () => {
@@ -540,7 +630,7 @@ function App() {
   };
 
   const downloadBuilderStill = () => {
-    const canvas = revealCanvasRef.current;
+    const canvas = studioCanvasRef.current;
 
     if (!canvas || !scenePack) {
       return;
@@ -586,7 +676,7 @@ function App() {
   };
 
   const downloadHandoffJson = () => {
-    if (!scenePack) {
+    if (!scenePack || !realSetBuild) {
       return;
     }
 
@@ -597,7 +687,13 @@ function App() {
             sceneFile: scenePack.exports.sceneFileName,
             stillFile: scenePack.exports.stillFileName,
             builderStillFile: scenePack.exports.builderStillFileName,
+            instructionArtifactFile: scenePack.exports.instructionsFileName,
+            instructionDataFile: scenePack.exports.instructionsDataFileName,
+            manifestFile: scenePack.exports.manifestFileName,
             filmFile: scenePack.exports.filmFileName,
+            mpdFile: realSetBuild.exportBundle.mpdFileName,
+            ioFile: realSetBuild.exportBundle.ioFileName,
+            validation: realSetBuild.validation,
             sacredLine: scenePack.copy.sacredLine,
             storyArcs: scenePack.storyArcs,
           },
@@ -613,27 +709,64 @@ function App() {
     downloadBlob(blob, scenePack.exports.handoffFileName);
   };
 
-  const downloadInstructions = () => {
+  const downloadInstructionsArtifact = () => {
     if (!scenePack) {
       return;
     }
 
-    const content = [
-      `${scenePack.box.title}`,
-      `${scenePack.box.subtitle}`,
-      '',
-      ...scenePack.instructions.steps.map(
-        (step, index) => `${index + 1}. ${step.title}\n${step.detail}`,
-      ),
-      '',
-      'Part manifest',
-      ...scenePack.instructions.partManifest.map(
-        (item) => `- ${item.colorName}: ${item.count} pieces`,
-      ),
-    ].join('\n');
-
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([buildInstructionArtifactHtml(scenePack)], {
+      type: 'text/html;charset=utf-8',
+    });
     downloadBlob(blob, scenePack.exports.instructionsFileName);
+  };
+
+  const downloadInstructionsData = () => {
+    if (!scenePack) {
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(scenePack.instructions, null, 2)], {
+      type: 'application/json',
+    });
+    downloadBlob(blob, scenePack.exports.instructionsDataFileName);
+  };
+
+  const downloadPartManifest = () => {
+    if (!scenePack) {
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(scenePack.model.partManifest, null, 2)], {
+      type: 'application/json',
+    });
+    downloadBlob(blob, scenePack.exports.manifestFileName);
+  };
+
+  const downloadValidationReport = () => {
+    if (!scenePack) {
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(scenePack.model.validation, null, 2)], {
+      type: 'application/json',
+    });
+    downloadBlob(blob, scenePack.exports.validationFileName);
+  };
+
+  const downloadMpd = () => {
+    if (!realSetBuild) {
+      return;
+    }
+
+    downloadBlob(createMpdBlob(realSetBuild.exportBundle), realSetBuild.exportBundle.mpdFileName);
+  };
+
+  const downloadIo = () => {
+    if (!realSetBuild) {
+      return;
+    }
+
+    downloadBlob(createIoBlob(realSetBuild.exportBundle), realSetBuild.exportBundle.ioFileName);
   };
 
   const downloadRevealClip = async () => {
@@ -653,9 +786,8 @@ function App() {
     }
   };
 
-  const counts = scenePack
-    ? Object.entries(scenePack.build.paletteCounts).sort((left, right) => right[1] - left[1])
-    : [];
+  const counts = scenePack?.instructions.colorBins ?? [];
+  const instructionPreviewHtml = scenePack ? buildInstructionArtifactHtml(scenePack) : '';
 
   return (
     <div className="app-shell">
@@ -699,41 +831,70 @@ function App() {
               <h2>Start a set</h2>
               <span>Image or prompt</span>
             </div>
-            <label className="upload-tray" htmlFor="logo-upload">
-              <input id="logo-upload" accept="image/*" onChange={handleFileChange} type="file" />
-              <strong>Upload an image</strong>
-              <span>Logos, icons, transparent PNGs, sketches. Drop one in and we will turn it into a set-box cover.</span>
-            </label>
+            <div className="input-launcher">
+              <input
+                ref={fileInputRef}
+                accept="image/*"
+                aria-hidden="true"
+                className="visually-hidden"
+                onChange={handleFileChange}
+                tabIndex={-1}
+                type="file"
+              />
+              <div className="upload-tray">
+                <strong>Image-first upload</strong>
+                <span>Best for logos, icons, transparent PNGs, and simple marks with clean contrast.</span>
+                <button className="upload-launcher-button" onClick={handleUploadButtonClick} type="button">
+                  Upload image
+                </button>
+              </div>
+              <div className="input-meta-row">
+                <span>PNG, JPG, or SVG. Original marks only.</span>
+                <button
+                  className="input-guidance-link"
+                  onClick={() => setActiveGuideIndex(0)}
+                  type="button"
+                >
+                  How to get a good result
+                </button>
+              </div>
+            </div>
 
             <form className="prompt-card" onSubmit={handlePromptSubmit}>
               <div className="card-heading compact">
                 <h3>Or describe it</h3>
                 <span>{promptAvailable ? 'GPT path ready' : 'API key needed for live prompt builds'}</span>
               </div>
-              <input
-                className="shell-input"
-                onChange={(event) =>
-                  setPromptForm((current) => ({
-                    ...current,
-                    brandName: event.target.value,
-                  }))
-                }
-                placeholder="Optional brand or set name"
-                type="text"
-                value={promptForm.brandName}
-              />
-              <textarea
-                className="shell-textarea"
-                onChange={(event) =>
-                  setPromptForm((current) => ({
-                    ...current,
-                    prompt: event.target.value,
-                  }))
-                }
-                placeholder="A joyful fries truck built from blocks rolling through a tiny city..."
-                rows={5}
-                value={promptForm.prompt}
-              />
+              <label className="field-stack">
+                <span>Set name</span>
+                <input
+                  className="shell-input"
+                  onChange={(event) =>
+                    setPromptForm((current) => ({
+                      ...current,
+                      brandName: event.target.value,
+                    }))
+                  }
+                  placeholder="Optional brand or set name"
+                  type="text"
+                  value={promptForm.brandName}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Describe the set</span>
+                <textarea
+                  className="shell-textarea"
+                  onChange={(event) =>
+                    setPromptForm((current) => ({
+                      ...current,
+                      prompt: event.target.value,
+                    }))
+                  }
+                  placeholder="A joyful fries truck built from blocks rolling through a tiny city..."
+                  rows={5}
+                  value={promptForm.prompt}
+                />
+              </label>
               <button disabled={promptAvailable === false || status === 'loading'} type="submit">
                 Generate the set
               </button>
@@ -755,7 +916,7 @@ function App() {
           <section className="rail-card">
             <div className="card-heading">
               <h2>Set box reveal</h2>
-              <span>{scenePack.box.coverArtMode === 'prompt-concept' ? 'Prompt concept' : 'Image build'}</span>
+              <span>{scenePack.box.coverArtMode === 'prompt-concept' ? 'Prompt concept' : 'Signature set'}</span>
             </div>
             <div className="info-grid">
               {scenePack.box.metadataRail.map((item) => (
@@ -766,6 +927,11 @@ function App() {
               ))}
             </div>
             <p className="summary-copy">{scenePack.box.heroCaption}</p>
+            <div className="builder-summary">
+              <span>Model: {scenePack.model.style}</span>
+              <span>Validation: {scenePack.model.validation.valid ? 'pass' : 'review'}</span>
+              <span>Collection: {scenePack.setIdentity.collection}</span>
+            </div>
           </section>
         ) : null}
 
@@ -773,58 +939,65 @@ function App() {
           <section className="rail-card">
             <div className="card-heading">
               <h2>Builder studio</h2>
-              <span>Guided 2.5D</span>
-            </div>
-
-            <div className="picker-grid">
-              {VISUAL_PRESETS.map((preset) => (
-                <button
-                  className={visualPresetId === preset.id ? 'choice-card active' : 'choice-card'}
-                  key={preset.id}
-                  onClick={() => setVisualPresetId(preset.id)}
-                  type="button"
-                >
-                  <strong>{preset.label}</strong>
-                  <span>{preset.description}</span>
-                </button>
-              ))}
+              <span>Guided 3D</span>
             </div>
 
             <div className="density-row">
-              {DENSITY_PRESETS.map((preset) => (
+              {scenePack.instructions.steps.map((step, index) => (
                 <button
-                  className={densityColumns === preset.columns ? 'choice-pill active' : 'choice-pill'}
-                  key={preset.id}
-                  onClick={() => setDensityColumns(preset.columns)}
+                  className={activeInstructionStep === index ? 'choice-pill active' : 'choice-pill'}
+                  key={step.id}
+                  onClick={() => setActiveInstructionStep(index)}
                   type="button"
                 >
-                  <strong>{preset.label}</strong>
-                  <span>{preset.description}</span>
+                  <strong>{index + 1}</strong>
+                  <span>{step.title}</span>
                 </button>
               ))}
             </div>
 
-            <div className="density-row">
-              {REVEAL_MODE_OPTIONS.map((option) => (
-                <button
-                  className={revealMode === option.id ? 'choice-pill active' : 'choice-pill'}
-                  key={option.id}
-                  onClick={() => setRevealMode(option.id)}
-                  type="button"
-                >
-                  <strong>{option.label}</strong>
-                  <span>{option.description}</span>
-                </button>
-              ))}
+            <div className="toggle-row">
+              <label className="toggle-chip">
+                <input
+                  checked={instructionSync}
+                  onChange={(event) => setInstructionSync(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Instruction sync</span>
+              </label>
+              <label className="toggle-chip">
+                <input
+                  checked={studioExploded}
+                  onChange={(event) => setStudioExploded(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Explode view</span>
+              </label>
+              <label className="toggle-chip">
+                <input
+                  checked={studioAutoRotate}
+                  onChange={(event) => setStudioAutoRotate(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Auto rotate</span>
+              </label>
             </div>
 
             <div className="builder-summary">
               <span>Camera: {scenePack.builder.cameraPreset}</span>
               <span>Scene: {scenePack.builder.scenePreset}</span>
-              <span>Tray emphasis: {scenePack.builder.partTrayEmphasis}</span>
+              <span>Step {activeInstructionStep + 1} / {scenePack.instructions.steps.length}</span>
             </div>
 
-            <button className="primary-action" disabled={revealPlaying} onClick={() => playReveal(scenePack)} type="button">
+            <button
+              className="primary-action"
+              disabled={revealPlaying}
+              onClick={() => {
+                setStudioAutoRotate(true);
+                playReveal(scenePack);
+              }}
+              type="button"
+            >
               {revealPlaying ? 'Playing reveal…' : 'Play reveal'}
             </button>
           </section>
@@ -841,6 +1014,7 @@ function App() {
                 <li key={step.id}>
                   <strong>{step.title}</strong>
                   <span>{step.detail}</span>
+                  <small>{step.partsNeeded.slice(0, 3).map((part) => `${part.count}x ${part.partName}`).join(' • ')}</small>
                 </li>
               ))}
             </ol>
@@ -856,7 +1030,12 @@ function App() {
             <div className="export-grid">
               <button onClick={downloadStill} type="button">Download set box</button>
               <button onClick={downloadBuilderStill} type="button">Download studio still</button>
-              <button onClick={downloadInstructions} type="button">Download build sheet</button>
+              <button onClick={downloadInstructionsArtifact} type="button">Download instruction book</button>
+              <button onClick={downloadInstructionsData} type="button">Download instructions JSON</button>
+              <button onClick={downloadPartManifest} type="button">Download part manifest</button>
+              <button onClick={downloadValidationReport} type="button">Download validation report</button>
+              <button onClick={downloadMpd} type="button">Download MPD</button>
+              <button onClick={downloadIo} type="button">Download IO bundle</button>
               <button disabled={downloadingRevealClip} onClick={downloadRevealClip} type="button">
                 {downloadingRevealClip ? 'Rendering clip…' : 'Download reveal clip'}
               </button>
@@ -896,7 +1075,7 @@ function App() {
           {error
             ? error
             : status === 'loading'
-              ? 'Building the set...'
+              ? 'Preparing your signature set'
               : scenePack
                 ? `${scenePack.brand.name} is ready.`
                 : 'This shell is local-first. Prompt mode wakes up when the server has an OpenAI key.'}
@@ -934,41 +1113,39 @@ function App() {
                 />
               )}
               {currentStep === 'studio' && (
-                <canvas
-                  className="reveal-canvas"
-                  height={scenePack.visual.canvasSize.height}
-                  ref={revealCanvasRef}
-                  width={scenePack.visual.canvasSize.width}
+                <BuilderStudio3D
+                  activeStepIndex={activeInstructionStep}
+                  autoRotate={studioAutoRotate}
+                  canvasRef={studioCanvasRef}
+                  exploded={studioExploded}
+                  instructionSync={instructionSync}
+                  scenePack={scenePack}
                 />
               )}
               {currentStep === 'instructions' && (
                 <div className="instructions-layout">
-                  <canvas
-                    className="hero-canvas small"
-                    height={scenePack.visual.canvasSize.height}
-                    ref={heroCanvasRef}
-                    width={scenePack.visual.canvasSize.width}
+                  <iframe
+                    className="instruction-preview-frame"
+                    srcDoc={instructionPreviewHtml}
+                    title="Instruction preview"
                   />
                   <div className="parts-panel">
                     <div className="parts-heading">
                       <strong>Part manifest</strong>
-                      <span>{scenePack.instructions.countTotals.uniqueColors} color bins</span>
+                      <span>{scenePack.instructions.countTotals.uniqueParts} part kinds</span>
+                    </div>
+                    <div className="builder-summary">
+                      <span>Theme: {scenePack.instructions.theme}</span>
+                      <span>Phases: {scenePack.instructions.steps.length}</span>
+                      <span>Pieces: {scenePack.instructions.countTotals.totalPieces}</span>
                     </div>
                     <div className="count-grid">
-                      {counts.map(([colorId, count]) => {
-                        const matchedColor = scenePack.instructions.partManifest.find(
-                          (item) => item.colorId === colorId,
-                        );
-
-                        if (!matchedColor) {
-                          return null;
-                        }
-
+                      {counts.map((matchedColor) => {
                         return (
-                          <article className="count-card" key={colorId}>
+                          <article className="count-card" key={matchedColor.colorId}>
                             <span className="swatch" style={{ backgroundColor: matchedColor.hex }} />
                             <div>
-                              <strong>{count}</strong>
+                              <strong>{matchedColor.count}</strong>
                               <span>{matchedColor.colorName}</span>
                             </div>
                           </article>
@@ -980,20 +1157,30 @@ function App() {
               )}
             </>
           ) : (
-            <div className="stage-placeholder">
-              <div className="placeholder-box">
-                <div className="blocks-badge floating">BLOCKS</div>
-                <div className="placeholder-hero" />
+            currentStep === 'input' ? (
+              <InputOnboardingShowcase
+                activeIndex={activeGuideIndex}
+                examples={INPUT_GUIDE_EXAMPLES}
+                onNext={() => cycleGuideIndex(1)}
+                onPrevious={() => cycleGuideIndex(-1)}
+                onSelectExample={setActiveGuideIndex}
+              />
+            ) : (
+              <div className="stage-placeholder">
+                <div className="placeholder-box">
+                  <div className="blocks-badge floating">BLOCKS</div>
+                  <div className="placeholder-hero" />
+                </div>
+                <div className="placeholder-copy">
+                  <strong>Set-box first.</strong>
+                  <p>
+                    The first frame should already feel like a product: blue packaging field, red
+                    badge, clean OpenAI type, and one bright block-built hero image people want to
+                    share.
+                  </p>
+                </div>
               </div>
-              <div className="placeholder-copy">
-                <strong>Set-box first.</strong>
-                <p>
-                  The first frame should already feel like a product: blue packaging field, red
-                  badge, clean OpenAI type, and one bright block-built hero image people want to
-                  share.
-                </p>
-              </div>
-            </div>
+            )
           )}
         </section>
 
@@ -1041,6 +1228,15 @@ function App() {
           </section>
         ) : null}
       </main>
+
+      <RightsConfirmationModal
+        acknowledged={rightsAcknowledged}
+        onAcknowledgeChange={setRightsAcknowledged}
+        onCancel={handleRightsCancel}
+        onContinue={handleRightsContinue}
+        open={rightsModalOpen}
+      />
+      <LoadingInterstitial kind={loadingKind} open={status === 'loading'} />
     </div>
   );
 }

@@ -7,11 +7,7 @@ import {
   type BlockColor,
   type StoryArc,
 } from './block-engine';
-import {
-  ConceptInputSchema,
-  type ConceptInput,
-  type PromptConcept,
-} from './concept-input';
+import { ConceptInputSchema, type ConceptInput, type PromptConcept } from './concept-input';
 import {
   buildExperiencePlan,
   type AssemblyStyle,
@@ -22,8 +18,9 @@ import {
   type VoiceMode,
   type WowMode,
 } from './experience-plan';
+import { buildRealSet, type RealSetBuild } from './set-engine';
 
-export const SCENEPACK_VERSION = '2.0.0';
+export const SCENEPACK_VERSION = '3.0.0';
 
 export type VisualPresetId = VisualPresetKey;
 
@@ -40,26 +37,26 @@ export type VisualPreset = {
 export const VISUAL_PRESETS: VisualPreset[] = [
   {
     id: 'primary-play',
-    label: 'Primary play',
-    description: 'White shell, strong primaries, and a classic set-box read.',
-    recommendedColumns: 36,
+    label: 'Signature box',
+    description: 'Clean OpenAI shell, strong blue set box, and premium collectible framing.',
+    recommendedColumns: 40,
     backgroundMood: 'white-board',
     studTreatment: 'classic-gloss',
     accentStyle: 'primary-panels',
   },
   {
     id: 'build-table',
-    label: 'Build table',
-    description: 'Green tray energy with stronger sorting logic and maker-desk confidence.',
-    recommendedColumns: 40,
+    label: 'Workshop cutaway',
+    description: 'A brighter making surface with stronger tray and instruction energy.',
+    recommendedColumns: 44,
     backgroundMood: 'green-mat',
     studTreatment: 'tray-gloss',
     accentStyle: 'sorter-trays',
   },
   {
     id: 'night-shift',
-    label: 'Night shift',
-    description: 'Dark bench drama with bright pieces and late-night momentum.',
+    label: 'Night bench',
+    description: 'Late-night product drama with darker bench surfaces and bright packaging trim.',
     recommendedColumns: 48,
     backgroundMood: 'dark-bench',
     studTreatment: 'night-gloss',
@@ -83,7 +80,7 @@ export type BoxMetadataItem = {
 };
 
 export type BuilderCameraPreset = 'hero-angle' | 'top-down' | 'street-level';
-export type BuilderScenePreset = 'monument-plaza' | 'micro-city' | 'studio-shelf';
+export type BuilderScenePreset = 'signature-plinth' | 'instruction-table' | 'studio-shelf';
 export type BuilderBoardTheme = 'openai-studio' | 'playfield' | 'night-bench';
 export type BuilderTrayEmphasis = 'balanced' | 'counts-first' | 'color-first';
 
@@ -91,13 +88,28 @@ export type InstructionStep = {
   id: string;
   title: string;
   detail: string;
+  assemblyIds: string[];
+  partCount: number;
+  partsNeeded: Array<{
+    colorId: string;
+    colorName: string;
+    count: number;
+    hex: string;
+    partId: string;
+    partName: string;
+  }>;
 };
 
 export type PartManifestItem = {
+  colorCode: number;
   colorId: string;
   colorName: string;
-  hex: string;
   count: number;
+  hex: string;
+  key: string;
+  partId: string;
+  partName: string;
+  role: string;
 };
 
 export type ScenePack = {
@@ -106,6 +118,12 @@ export type ScenePack = {
     name: string;
     sourceFileName: string;
     uploadedAt: string;
+  };
+  setIdentity: {
+    name: string;
+    collection: string;
+    buildId: string;
+    heroModel: 'Codex Signature Set' | 'Custom Signature Set';
   };
   build: {
     grid: BlockBuild;
@@ -120,6 +138,12 @@ export type ScenePack = {
       height: number;
     };
   };
+  packaging: {
+    style: 'signature-box';
+    heroCaption: string;
+    coverArtMode: 'signature-set' | 'prompt-concept';
+    metadataRail: BoxMetadataItem[];
+  };
   box: {
     badge: {
       text: 'BLOCKS';
@@ -128,8 +152,17 @@ export type ScenePack = {
     title: string;
     subtitle: string;
     metadataRail: BoxMetadataItem[];
-    coverArtMode: 'block-build' | 'prompt-concept';
+    coverArtMode: 'signature-set' | 'prompt-concept';
     heroCaption: string;
+  };
+  model: {
+    canonical: 'ModelIR';
+    style: RealSetBuild['spec']['modelStyle'];
+    intent: RealSetBuild['intent'];
+    spec: RealSetBuild['spec'];
+    ir: RealSetBuild['model'];
+    partManifest: PartManifestItem[];
+    validation: RealSetBuild['validation'];
   };
   builder: {
     cameraPreset: BuilderCameraPreset;
@@ -139,13 +172,20 @@ export type ScenePack = {
     densityColumns: number;
   };
   instructions: {
+    theme: 'airy-sky-blue';
     steps: InstructionStep[];
     partManifest: PartManifestItem[];
     countTotals: {
       totalPieces: number;
       uniqueColors: number;
+      uniqueParts: number;
     };
-    colorBins: PartManifestItem[];
+    colorBins: Array<{
+      colorId: string;
+      colorName: string;
+      count: number;
+      hex: string;
+    }>;
   };
   experience: {
     revealMode: RevealMode;
@@ -174,15 +214,32 @@ export type ScenePack = {
     cueIds: SoundCueIds;
     sacredLineScript: string;
   };
+  audioDirection: {
+    mood: 'tactile-precise';
+    cueSequence: Array<keyof SoundCueIds>;
+  };
   storyArcs: StoryArc[];
   exports: {
     stillFileName: string;
     builderStillFileName: string;
     instructionsFileName: string;
+    instructionsDataFileName: string;
+    manifestFileName: string;
+    validationFileName: string;
     filmFileName: string;
     sceneFileName: string;
     handoffFileName: string;
+    mpdFileName: string;
+    ioFileName: string;
     posterFrameFileName?: string;
+  };
+  keepsakes: {
+    stillFileName: string;
+    studioStillFileName: string;
+    instructionArtifactFileName: string;
+    instructionDataFileName: string;
+    mpdFileName: string;
+    ioFileName: string;
   };
   commerce: {
     status: 'coming-soon';
@@ -194,13 +251,6 @@ export type ScenePack = {
     primaryFormat: '16:9';
   };
 };
-
-const BlockColorSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  hex: z.string(),
-  rgb: z.tuple([z.number(), z.number(), z.number()]),
-});
 
 const StoryArcSchema = z.object({
   id: z.enum(['instant-magic', 'nostalgia-bridge', 'world-building-montage']),
@@ -217,6 +267,13 @@ const VisualPresetSchema = z.object({
   backgroundMood: z.enum(['white-board', 'green-mat', 'dark-bench']),
   studTreatment: z.enum(['classic-gloss', 'tray-gloss', 'night-gloss']),
   accentStyle: z.enum(['primary-panels', 'sorter-trays', 'primary-on-dark']),
+});
+
+const BlockColorSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  hex: z.string(),
+  rgb: z.tuple([z.number(), z.number(), z.number()]),
 });
 
 const BlockBuildSchema = z.object({
@@ -241,56 +298,39 @@ const BlockBuildSchema = z.object({
     .nullable(),
 });
 
-const ExperienceSchema = z.object({
-  revealMode: z.enum(['faithful', 'imagination']),
-  wowMode: z.enum(['still-only', 'cinematic']),
-  voiceMode: z.literal('sacred-line'),
-});
-
-const WorldSchema = z.object({
-  concept: z.string(),
-  elements: z.array(z.string()).min(3).max(5),
-  cameraEmotion: z.enum(['monument', 'curiosity', 'expansion']),
-});
-
-const CopySchema = z.object({
-  title: z.string(),
-  tagline: z.string(),
-  thesis: z.string(),
-  sacredLine: z.string(),
-});
-
-const MotionSchema = z.object({
-  assemblyStyle: z.enum(['snap-stack', 'tray-build', 'night-lift']),
-  depthPlan: z.enum(['stud-rise', 'tray-run', 'bench-beam']),
-  heroBeatFrame: z.number(),
-  worldRevealFrame: z.number(),
-});
-
-const AudioSchema = z.object({
-  sourceMode: z.enum(['local-cues', 'generated-voice']),
-  cueIds: z.object({
-    upload: z.literal('upload'),
-    quantize: z.literal('quantize'),
-    build: z.literal('build'),
-    heroReveal: z.literal('hero-reveal'),
-    sacredLine: z.literal('sacred-line'),
-    montage: z.literal('montage'),
-    resolve: z.literal('resolve'),
-  }),
-  sacredLineScript: z.string(),
-});
-
 const BoxMetadataItemSchema = z.object({
   label: z.string(),
   value: z.string(),
 });
 
 const PartManifestItemSchema = z.object({
+  colorCode: z.number(),
   colorId: z.string(),
   colorName: z.string(),
-  hex: z.string(),
   count: z.number(),
+  hex: z.string(),
+  key: z.string(),
+  partId: z.string(),
+  partName: z.string(),
+  role: z.string(),
+});
+
+const InstructionStepSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  detail: z.string(),
+  assemblyIds: z.array(z.string()),
+  partCount: z.number(),
+  partsNeeded: z.array(
+    z.object({
+      colorId: z.string(),
+      colorName: z.string(),
+      count: z.number(),
+      hex: z.string(),
+      partId: z.string(),
+      partName: z.string(),
+    }),
+  ),
 });
 
 export const ScenePackSchema = z.object({
@@ -299,6 +339,12 @@ export const ScenePackSchema = z.object({
     name: z.string(),
     sourceFileName: z.string(),
     uploadedAt: z.string(),
+  }),
+  setIdentity: z.object({
+    name: z.string(),
+    collection: z.string(),
+    buildId: z.string(),
+    heroModel: z.enum(['Codex Signature Set', 'Custom Signature Set']),
   }),
   build: z.object({
     grid: BlockBuildSchema,
@@ -313,6 +359,12 @@ export const ScenePackSchema = z.object({
       height: z.number(),
     }),
   }),
+  packaging: z.object({
+    style: z.literal('signature-box'),
+    heroCaption: z.string(),
+    coverArtMode: z.enum(['signature-set', 'prompt-concept']),
+    metadataRail: z.array(BoxMetadataItemSchema),
+  }),
   box: z.object({
     badge: z.object({
       text: z.literal('BLOCKS'),
@@ -320,46 +372,105 @@ export const ScenePackSchema = z.object({
     }),
     title: z.string(),
     subtitle: z.string(),
-    metadataRail: z.array(BoxMetadataItemSchema).min(4).max(4),
-    coverArtMode: z.enum(['block-build', 'prompt-concept']),
+    metadataRail: z.array(BoxMetadataItemSchema),
+    coverArtMode: z.enum(['signature-set', 'prompt-concept']),
     heroCaption: z.string(),
+  }),
+  model: z.object({
+    canonical: z.literal('ModelIR'),
+    style: z.enum(['monochrome-signature', 'color-display']),
+    intent: z.custom<RealSetBuild['intent']>(),
+    spec: z.custom<RealSetBuild['spec']>(),
+    ir: z.custom<RealSetBuild['model']>(),
+    partManifest: z.array(PartManifestItemSchema),
+    validation: z.custom<RealSetBuild['validation']>(),
   }),
   builder: z.object({
     cameraPreset: z.enum(['hero-angle', 'top-down', 'street-level']),
-    scenePreset: z.enum(['monument-plaza', 'micro-city', 'studio-shelf']),
+    scenePreset: z.enum(['signature-plinth', 'instruction-table', 'studio-shelf']),
     boardTheme: z.enum(['openai-studio', 'playfield', 'night-bench']),
     partTrayEmphasis: z.enum(['balanced', 'counts-first', 'color-first']),
     densityColumns: z.number(),
   }),
   instructions: z.object({
-    steps: z.array(
-      z.object({
-        id: z.string(),
-        title: z.string(),
-        detail: z.string(),
-      }),
-    ),
+    theme: z.literal('airy-sky-blue'),
+    steps: z.array(InstructionStepSchema),
     partManifest: z.array(PartManifestItemSchema),
     countTotals: z.object({
       totalPieces: z.number(),
       uniqueColors: z.number(),
+      uniqueParts: z.number(),
     }),
-    colorBins: z.array(PartManifestItemSchema),
+    colorBins: z.array(
+      z.object({
+        colorId: z.string(),
+        colorName: z.string(),
+        count: z.number(),
+        hex: z.string(),
+      }),
+    ),
   }),
-  experience: ExperienceSchema,
-  world: WorldSchema,
-  copy: CopySchema,
-  motion: MotionSchema,
-  audio: AudioSchema,
+  experience: z.object({
+    revealMode: z.enum(['faithful', 'imagination']),
+    wowMode: z.enum(['still-only', 'cinematic']),
+    voiceMode: z.literal('sacred-line'),
+  }),
+  world: z.object({
+    concept: z.string(),
+    elements: z.array(z.string()),
+    cameraEmotion: z.enum(['monument', 'curiosity', 'expansion']),
+  }),
+  copy: z.object({
+    title: z.string(),
+    tagline: z.string(),
+    thesis: z.string(),
+    sacredLine: z.string(),
+  }),
+  motion: z.object({
+    assemblyStyle: z.enum(['snap-stack', 'tray-build', 'night-lift']),
+    depthPlan: z.enum(['stud-rise', 'tray-run', 'bench-beam']),
+    heroBeatFrame: z.number(),
+    worldRevealFrame: z.number(),
+  }),
+  audio: z.object({
+    sourceMode: z.enum(['local-cues', 'generated-voice']),
+    cueIds: z.object({
+      upload: z.literal('upload'),
+      quantize: z.literal('quantize'),
+      build: z.literal('build'),
+      heroReveal: z.literal('hero-reveal'),
+      sacredLine: z.literal('sacred-line'),
+      montage: z.literal('montage'),
+      resolve: z.literal('resolve'),
+    }),
+    sacredLineScript: z.string(),
+  }),
+  audioDirection: z.object({
+    mood: z.literal('tactile-precise'),
+    cueSequence: z.array(z.enum(['upload', 'quantize', 'build', 'heroReveal', 'sacredLine', 'montage', 'resolve'])),
+  }),
   storyArcs: z.array(StoryArcSchema),
   exports: z.object({
     stillFileName: z.string(),
     builderStillFileName: z.string(),
     instructionsFileName: z.string(),
+    instructionsDataFileName: z.string(),
+    manifestFileName: z.string(),
+    validationFileName: z.string(),
     filmFileName: z.string(),
     sceneFileName: z.string(),
     handoffFileName: z.string(),
+    mpdFileName: z.string(),
+    ioFileName: z.string(),
     posterFrameFileName: z.string().optional(),
+  }),
+  keepsakes: z.object({
+    stillFileName: z.string(),
+    studioStillFileName: z.string(),
+    instructionArtifactFileName: z.string(),
+    instructionDataFileName: z.string(),
+    mpdFileName: z.string(),
+    ioFileName: z.string(),
   }),
   commerce: z.object({
     status: z.literal('coming-soon'),
@@ -396,140 +507,79 @@ export const slugifyBrandName = (value: string) =>
 const findVisualPreset = (presetId: VisualPresetId) =>
   VISUAL_PRESETS.find((preset) => preset.id === presetId) ?? VISUAL_PRESETS[0]!;
 
-const buildPromptBoxFields = (promptConcept: PromptConcept | undefined, brandName: string) => ({
-  title: promptConcept?.boxTitle ?? brandName,
-  subtitle: promptConcept?.boxSubtitle ?? 'Custom build set',
+const buildPromptBoxFields = (promptConcept: PromptConcept | undefined, brandName: string, realSet: RealSetBuild) => ({
+  title: promptConcept?.boxTitle ?? realSet.spec.flagshipName,
+  subtitle:
+    promptConcept?.boxSubtitle ??
+    (realSet.spec.modelStyle === 'monochrome-signature'
+      ? 'Signature monochrome collectible'
+      : 'Custom display set'),
   serial:
     promptConcept?.badgeSerial ??
-    `B-${slugifyBrandName(brandName).slice(0, 3).toUpperCase().padEnd(3, '0')}`,
+    realSet.spec.buildId,
   caption:
     promptConcept?.coverConcept.caption ??
-    'A custom block build sparked from one image and finished with clean OpenAI clarity.',
+    (realSet.spec.modelStyle === 'monochrome-signature'
+      ? 'A premium black-and-white Codex collectible with real parts, instructions, and exports.'
+      : `A collectible build set sparked by ${brandName}.`),
 });
 
-const buildPartManifest = (build: BlockBuild): PartManifestItem[] =>
-  Object.entries(build.countsByColor)
-    .map(([colorId, count]) => {
-      const matchedColor = Object.values(BLOCK_PALETTE).find((color) => color.id === colorId);
+const toColorBins = (partManifest: PartManifestItem[]) =>
+  Object.values(
+    partManifest.reduce<Record<string, { colorId: string; colorName: string; count: number; hex: string }>>(
+      (bins, item) => {
+        const existing = bins[item.colorId];
 
-      if (!matchedColor) {
-        return null;
-      }
+        if (existing) {
+          existing.count += item.count;
+          return bins;
+        }
 
-      return {
-        colorId: matchedColor.id,
-        colorName: matchedColor.name,
-        hex: matchedColor.hex,
-        count: count ?? 0,
-      };
-    })
-    .filter((item): item is PartManifestItem => item !== null)
-    .sort((left, right) => right.count - left.count);
+        bins[item.colorId] = {
+          colorId: item.colorId,
+          colorName: item.colorName,
+          count: item.count,
+          hex: item.hex,
+        };
 
-const buildInstructionSteps = (
-  brandName: string,
-  build: BlockBuild,
-  partManifest: PartManifestItem[],
-  revealMode: RevealMode,
-): InstructionStep[] => {
-  const primary = partManifest[0]?.colorName ?? 'Studio White';
-  const secondary = partManifest[1]?.colorName ?? primary;
-  const accent = partManifest[2]?.colorName ?? secondary;
-  const shapeCue =
-    build.visibleBounds === null
-      ? 'keep the footprint compact'
-      : `let the footprint hold at ${build.visibleBounds.maxX - build.visibleBounds.minX + 1} columns wide`;
-
-  return [
-    {
-      id: 'tray-01',
-      title: 'Sort the trays',
-      detail: `Group the ${primary} and ${secondary} pieces first so the silhouette clicks in fast.`,
-    },
-    {
-      id: 'base-02',
-      title: 'Lock the base build',
-      detail: `Build the widest planes first and ${shapeCue} before you reach for the accent colors.`,
-    },
-    {
-      id: 'edge-03',
-      title: 'Snap the hero edges',
-      detail: `Use the ${accent} pieces to sharpen the mark and make ${brandName} read at a glance.`,
-    },
-    {
-      id: 'world-04',
-      title: 'Stage the reveal',
-      detail:
-        revealMode === 'faithful'
-          ? 'Frame the finished mark like a monument on the build table with rails, trays, and one clear focal lane.'
-          : 'Open the finished mark into a playful micro-world so the set feels larger than the logo that started it.',
-    },
-  ];
-};
+        return bins;
+      },
+      {},
+    ),
+  ).sort((left, right) => right.count - left.count);
 
 const buildMetadataRail = ({
-  build,
-  promptConcept,
+  partManifest,
+  realSet,
   revealMode,
 }: {
-  build: BlockBuild;
-  promptConcept?: PromptConcept;
+  partManifest: PartManifestItem[];
+  realSet: RealSetBuild;
   revealMode: RevealMode;
 }): BoxMetadataItem[] => [
-  {
-    label: 'Builder age',
-    value: promptConcept ? '12+' : '10+',
-  },
-  {
-    label: 'Build ID',
-    value:
-      promptConcept?.badgeSerial ??
-      `JBB-${Math.max(101, build.cells.length).toString().padStart(3, '0')}`,
-  },
-  {
-    label: 'Pieces',
-    value: String(build.cells.length),
-  },
-  {
-    label: 'Mode',
-    value: revealMode === 'faithful' ? 'Faithful reveal' : 'Imagination reveal',
-  },
+  { label: 'Builder age', value: realSet.spec.modelStyle === 'monochrome-signature' ? '14+' : '10+' },
+  { label: 'Build ID', value: realSet.spec.buildId },
+  { label: 'Pieces', value: String(partManifest.reduce((total, item) => total + item.count, 0)) },
+  { label: 'Mode', value: revealMode === 'faithful' ? 'Signature' : 'Expanded' },
 ];
 
 const buildBuilderPlan = ({
   preset,
-  revealMode,
-  columns,
+  realSet,
 }: {
   preset: VisualPreset;
-  revealMode: RevealMode;
-  columns: number;
+  realSet: RealSetBuild;
 }): ScenePack['builder'] => ({
-  cameraPreset:
-    revealMode === 'faithful'
-      ? 'hero-angle'
-      : preset.id === 'night-shift'
-        ? 'street-level'
-        : 'top-down',
-  scenePreset:
-    revealMode === 'faithful'
-      ? 'monument-plaza'
-      : preset.id === 'primary-play'
-        ? 'micro-city'
-        : 'studio-shelf',
+  cameraPreset: realSet.spec.modelStyle === 'monochrome-signature' ? 'hero-angle' : 'top-down',
+  scenePreset: realSet.spec.modelStyle === 'monochrome-signature' ? 'signature-plinth' : 'instruction-table',
   boardTheme:
     preset.id === 'night-shift'
       ? 'night-bench'
       : preset.id === 'build-table'
         ? 'playfield'
         : 'openai-studio',
-  partTrayEmphasis:
-    preset.id === 'build-table'
-      ? 'counts-first'
-      : revealMode === 'imagination'
-        ? 'color-first'
-        : 'balanced',
-  densityColumns: columns,
+  partTrayEmphasis: realSet.spec.modelStyle === 'monochrome-signature' ? 'counts-first' : 'balanced',
+  densityColumns: realSet.displayGrid.columns,
 });
 
 export const buildScenePack = ({
@@ -542,6 +592,7 @@ export const buildScenePack = ({
   revealMode,
   visualPresetId,
   wowMode = 'cinematic',
+  realSet,
 }: {
   input: ConceptInput;
   brandName: string;
@@ -552,8 +603,17 @@ export const buildScenePack = ({
   revealMode: RevealMode;
   visualPresetId: VisualPresetId;
   wowMode?: WowMode;
+  realSet?: RealSetBuild;
 }): ScenePack => {
-  const lockedDominantColor = dominantColor ?? build.dominantColor ?? BLOCK_PALETTE.green;
+  const lockedRealSet =
+    realSet ??
+    buildRealSet({
+      brandName,
+      build,
+      dominantColor,
+      input,
+    });
+  const lockedDominantColor = dominantColor ?? lockedRealSet.displayGrid.dominantColor ?? BLOCK_PALETTE.black;
   const preset = findVisualPreset(visualPresetId);
   const experiencePlan = buildExperiencePlan({
     brandName,
@@ -563,14 +623,18 @@ export const buildScenePack = ({
   });
   const slug = slugifyBrandName(brandName);
   const promptConcept = input.kind === 'prompt' ? input.promptConcept : undefined;
-  const partManifest = buildPartManifest(build);
-  const instructionSteps = buildInstructionSteps(brandName, build, partManifest, revealMode);
-  const boxFields = buildPromptBoxFields(promptConcept, brandName);
+  const partManifest = lockedRealSet.partManifest;
+  const colorBins = toColorBins(partManifest);
+  const instructionSteps = lockedRealSet.exportBundle.instructionPlan.steps as InstructionStep[];
+  const boxFields = buildPromptBoxFields(promptConcept, brandName, lockedRealSet);
   const metadataRail = buildMetadataRail({
-    build,
-    promptConcept,
+    partManifest,
+    realSet: lockedRealSet,
     revealMode,
   });
+  const totalPieces = partManifest.reduce((total, item) => total + item.count, 0);
+  const silhouetteDepth = lockedRealSet.spec.targetStuds.depth - lockedRealSet.spec.plinthDepthStuds;
+  const visibleDisplayCells = lockedRealSet.displayGrid.cells.filter((cell) => cell.y < silhouetteDepth).length;
 
   return {
     input,
@@ -579,10 +643,16 @@ export const buildScenePack = ({
       sourceFileName: fileName,
       uploadedAt,
     },
+    setIdentity: {
+      name: lockedRealSet.spec.flagshipName,
+      collection: lockedRealSet.spec.collection,
+      buildId: lockedRealSet.spec.buildId,
+      heroModel: lockedRealSet.spec.modelStyle === 'monochrome-signature' ? 'Codex Signature Set' : 'Custom Signature Set',
+    },
     build: {
-      grid: build,
-      visibleBlockCount: build.cells.length,
-      paletteCounts: build.countsByColor,
+      grid: lockedRealSet.displayGrid,
+      visibleBlockCount: visibleDisplayCells,
+      paletteCounts: lockedRealSet.displayGrid.countsByColor,
       dominantColor: lockedDominantColor,
     },
     visual: {
@@ -592,6 +662,12 @@ export const buildScenePack = ({
         height: 900,
       },
     },
+    packaging: {
+      style: 'signature-box',
+      heroCaption: boxFields.caption,
+      coverArtMode: input.kind === 'prompt' ? 'prompt-concept' : 'signature-set',
+      metadataRail,
+    },
     box: {
       badge: {
         text: 'BLOCKS',
@@ -600,22 +676,32 @@ export const buildScenePack = ({
       title: boxFields.title,
       subtitle: boxFields.subtitle,
       metadataRail,
-      coverArtMode: input.kind === 'prompt' ? 'prompt-concept' : 'block-build',
+      coverArtMode: input.kind === 'prompt' ? 'prompt-concept' : 'signature-set',
       heroCaption: boxFields.caption,
+    },
+    model: {
+      canonical: 'ModelIR',
+      style: lockedRealSet.spec.modelStyle,
+      intent: lockedRealSet.intent,
+      spec: lockedRealSet.spec,
+      ir: lockedRealSet.model,
+      partManifest,
+      validation: lockedRealSet.validation,
     },
     builder: buildBuilderPlan({
       preset,
-      revealMode,
-      columns: build.columns,
+      realSet: lockedRealSet,
     }),
     instructions: {
+      theme: 'airy-sky-blue',
       steps: instructionSteps,
       partManifest,
       countTotals: {
-        totalPieces: build.cells.length,
-        uniqueColors: partManifest.length,
+        totalPieces,
+        uniqueColors: colorBins.length,
+        uniqueParts: new Set(partManifest.map((item) => item.partId)).size,
       },
-      colorBins: partManifest,
+      colorBins,
     },
     experience: {
       revealMode,
@@ -627,18 +713,36 @@ export const buildScenePack = ({
           ...experiencePlan.world,
           concept: promptConcept.worldConcept,
         }
-      : experiencePlan.world,
+      : {
+          ...experiencePlan.world,
+          concept:
+            lockedRealSet.spec.modelStyle === 'monochrome-signature'
+              ? revealMode === 'faithful'
+                ? 'A premium monochrome Codex collectible on a display plinth.'
+                : 'A premium monochrome Codex collectible staged like a launch-ready signature set with trays, studio cues, and quiet motion.'
+              : experiencePlan.world.concept,
+        },
     copy: {
       title: boxFields.title,
       tagline: DEFAULT_COPY.tagline,
       thesis: DEFAULT_COPY.thesis,
-      sacredLine: experiencePlan.copy.sacredLine,
+      sacredLine:
+        lockedRealSet.spec.modelStyle === 'monochrome-signature'
+          ? 'You can just build it.'
+          : experiencePlan.copy.sacredLine,
     },
     motion: experiencePlan.motion,
     audio: {
       sourceMode: 'local-cues',
       cueIds: DEFAULT_SOUND_CUES,
-      sacredLineScript: experiencePlan.copy.sacredLine,
+      sacredLineScript:
+        lockedRealSet.spec.modelStyle === 'monochrome-signature'
+          ? 'You can just build it.'
+          : experiencePlan.copy.sacredLine,
+    },
+    audioDirection: {
+      mood: 'tactile-precise',
+      cueSequence: ['upload', 'quantize', 'build', 'heroReveal', 'sacredLine', 'resolve'],
     },
     storyArcs: buildStoryArcs({
       brandName,
@@ -647,17 +751,30 @@ export const buildScenePack = ({
     exports: {
       stillFileName: `${slug}-set-box-16x9.png`,
       builderStillFileName: `${slug}-builder-still-16x9.png`,
-      instructionsFileName: `${slug}-build-sheet.txt`,
+      instructionsFileName: `${slug}-instruction-book.html`,
+      instructionsDataFileName: `${slug}-instructions.json`,
+      manifestFileName: `${slug}-part-manifest.json`,
+      validationFileName: `${slug}-validation-report.json`,
       filmFileName: `${slug}-reveal-film.mp4`,
       sceneFileName: `${slug}-scene-pack.json`,
       handoffFileName: `${slug}-film-handoff.json`,
+      mpdFileName: lockedRealSet.exportBundle.mpdFileName,
+      ioFileName: lockedRealSet.exportBundle.ioFileName,
       posterFrameFileName: `${slug}-poster-frame.png`,
+    },
+    keepsakes: {
+      stillFileName: `${slug}-set-box-16x9.png`,
+      studioStillFileName: `${slug}-builder-still-16x9.png`,
+      instructionArtifactFileName: `${slug}-instruction-book.html`,
+      instructionDataFileName: `${slug}-instructions.json`,
+      mpdFileName: lockedRealSet.exportBundle.mpdFileName,
+      ioFileName: lockedRealSet.exportBundle.ioFileName,
     },
     commerce: {
       status: 'coming-soon',
       ctaLabel: 'Buy the bricks',
       heroMessage:
-        'Buy the bricks is coming soon. For now, keep the still, the clip, and the set story.',
+        'Buy the bricks is coming soon. For now, keep the collectible stills, the instruction book, and the export bundle.',
     },
     exportMeta: {
       version: SCENEPACK_VERSION,

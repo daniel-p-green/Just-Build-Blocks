@@ -78,7 +78,10 @@ describe('buildScenePack', () => {
     expect(scenePack.audio.cueIds.sacredLine).toBe('sacred-line');
     expect(scenePack.motion.heroBeatFrame).toBeLessThan(scenePack.motion.worldRevealFrame);
     expect(scenePack.exports.filmFileName).toBe('codex-blocks-reveal-film.mp4');
-    expect(scenePack.build.visibleBlockCount).toBe(4);
+    expect(scenePack.model.canonical).toBe('ModelIR');
+    expect(scenePack.model.validation.valid).toBe(true);
+    expect(scenePack.build.visibleBlockCount).toBeGreaterThan(0);
+    expect(scenePack.build.visibleBlockCount).toBeLessThanOrEqual(scenePack.build.grid.cells.length);
     expect(scenePack.input.kind).toBe('image');
     expect(scenePack.box.badge.text).toBe('BLOCKS');
     expect(scenePack.builder.cameraPreset).toBe('hero-angle');
@@ -167,6 +170,9 @@ describe('buildScenePack', () => {
     });
 
     expect(faithful.build.grid).toEqual(imagination.build.grid);
+    expect(faithful.model.ir).toEqual(imagination.model.ir);
+    expect(faithful.model.validation.valid).toBe(true);
+    expect(imagination.model.validation.valid).toBe(true);
     expect(faithful.world.cameraEmotion).toBe('monument');
     expect(imagination.world.cameraEmotion).toBe('expansion');
     expect(faithful.world.concept).not.toBe(imagination.world.concept);
