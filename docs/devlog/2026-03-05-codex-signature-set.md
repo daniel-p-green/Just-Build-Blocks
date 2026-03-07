@@ -99,3 +99,50 @@ Make the visible product projections feel premium enough to support the stronger
 1. Get one stable build signal for the latest visual changes.
 2. Iterate on the set box until the object read is genuinely “blink twice” premium.
 3. Add more instruction-specific fidelity, especially step imagery derived from phases rather than abstract figure boards.
+
+## 2026-03-06 09:10 CST
+
+### Session goal
+
+Pivot the product from a single flagship experience into a collection-first launch line while keeping `ModelIR` canonical and turning the visible app into a premium consumer product line instead of a one-off tool.
+
+### Decisions made
+
+- Elevated the product to `BLOCKS Signature Collection` with a four-SKU launch line.
+- Kept `ModelIR` as the canonical geometry truth and treated packaging, instruction books, studio, and collection landing as derived projections.
+- Decided the collection shell would stay compact and product-led: landing shelf first, commission flow second.
+- Threaded SKU accent colors through packaging, instruction-book styling, and studio lighting/materials so the line reads as one family with controlled variation.
+
+### References reviewed
+
+- Existing collection-first plan in-thread
+- Existing signature-set engine and scene-pack implementation in this repo
+- Prior premium packaging and instruction references already logged above
+
+### Tasks completed
+
+- Added collection-layer canonical types and pack generation in `src/lib/collection-pack.ts`.
+- Added launch-line metadata to the set engine so real exports can carry SKU, line, accent color, archetype, and packaging angle.
+- Expanded `ScenePack` with collection-aware fields including launch line, SKU, accent color, hero shot angle, builder accent, and instruction book title.
+- Added a `CollectionShelf` landing surface and wired the app to start on the collection landing before entering per-set detail flows.
+- Updated the app so collection detail pages use collection-derived `ScenePack` / `RealSetBuild` projections while commission builds continue to use the same downstream surfaces.
+- Reworked the hero renderer to use SKU-aware accent styling for premium box art.
+- Upgraded the instruction artifact with stronger book-strip metadata, accent-aware step styling, color-bin summary, and clearer product-book composition.
+- Tightened the live 3D studio with accent-aware lighting, fog, trim, and plinth details so each SKU reads as part of the same line.
+- Added collection-pack tests and rewrote onboarding tests around the collection-first landing flow.
+- Extended scene-pack tests to cover the new collection identity fields.
+
+### Checks run
+
+- Pending after collection-first pass
+
+### Blockers
+
+- Need a fresh test/build confirmation after the collection-first pass.
+- Need to confirm the updated app flow has no stale single-flagship assumptions in `App.tsx`.
+
+### Next move
+
+1. Run targeted vitest coverage for onboarding, scene pack, collection pack, and set engine.
+2. Run a quick security review after verification.
+3. If verification passes, do a final visual tightening pass on the collection shelf and set detail surfaces.

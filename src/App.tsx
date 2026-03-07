@@ -1,12 +1,26 @@
-import { startTransition, useDeferredValue, useEffect, useEffectEvent, useRef, useState } from 'react';
+import {
+  Suspense,
+  lazy,
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 
 import './App.css';
 import { buildBlockBuildFromImageData, type ImageDataLike } from './lib/block-engine';
-import { BuilderStudio3D } from './components/BuilderStudio3D';
+import { CollectionShelf } from './components/CollectionShelf';
 import { InputOnboardingShowcase } from './components/InputOnboardingShowcase';
 import { LoadingInterstitial } from './components/LoadingInterstitial';
 import { RightsConfirmationModal } from './components/RightsConfirmationModal';
+import {
+  SIGNATURE_COLLECTION_SPEC,
+  buildCollectionPack,
+} from './lib/collection-pack';
 import {
   buildPromptConceptDataUrl,
   normalizeConceptInput,
@@ -18,6 +32,14 @@ import { drawHeroCanvas } from './lib/hero-renderer';
 import { INPUT_GUIDE_EXAMPLES } from './lib/input-guidance';
 import { buildInstructionArtifactHtml } from './lib/instruction-artifact';
 import {
+  AUDIO_PACK_OPTIONS,
+  getAudioPackBasePath,
+  resolveBrowserCueAudioPath,
+  type AudioCueId,
+  type AudioPackId,
+} from './lib/audio-pack';
+import {
+  getRevealClipFileExtension,
   REVEAL_DURATION_MS,
   recordRevealClip,
 } from './lib/reveal-renderer';
@@ -26,9 +48,21 @@ import {
   buildScenePack,
   type ScenePack,
 } from './lib/scene-pack';
-import { buildRealSet, createIoBlob, createMpdBlob, type RealSetBuild } from './lib/set-engine';
+import {
+  buildRealSet,
+  createIoBlob,
+  createMpdBlob,
+  summarizeBricklinkSourcing,
+  type RealSetBuild,
+} from './lib/set-engine';
 
-type WizardStep = 'input' | 'box' | 'studio' | 'instructions' | 'keep';
+const BuilderStudio3D = lazy(async () => {
+  const module = await import('./components/BuilderStudio3D');
+  return { default: module.BuilderStudio3D };
+});
+
+type WizardStep = 'collection' | 'input' | 'box' | 'studio' | 'instructions' | 'keep';
+type ExperienceMode = 'collection' | 'commission';
 
 type SourceAsset = {
   input: ConceptInput;
@@ -51,7 +85,7 @@ const WIZARD_STEPS: Array<{ id: WizardStep; label: string; eyebrow: string }> = 
   { id: 'input', label: 'Input', eyebrow: '01' },
   { id: 'box', label: 'Set box', eyebrow: '02' },
   { id: 'studio', label: 'Studio', eyebrow: '03' },
-  { id: 'instructions', label: 'Build sheet', eyebrow: '04' },
+  { id: 'instructions', label: 'Instructions', eyebrow: '04' },
   { id: 'keep', label: 'Keep', eyebrow: '05' },
 ];
 
@@ -82,6 +116,19 @@ const titleCase = (value: string) =>
 
 const deriveBrandName = (fileName: string) =>
   titleCase(stripExtension(fileName).replace(/[-_]+/g, ' '));
+
+const buildCatalogReferenceLinks = (partManifest: ScenePack['model']['partManifest']) => {
+  const seenPartIds = new Set<string>();
+
+  return partManifest.filter((item) => {
+    if (!item.bricklinkCatalogUrl || seenPartIds.has(item.partId)) {
+      return false;
+    }
+
+    seenPartIds.add(item.partId);
+    return true;
+  }).slice(0, 4);
+};
 
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -202,12 +249,16 @@ const loadPromptAsset = async ({
   };
 };
 
-const canVisitStep = (step: WizardStep, sourceAsset: SourceAsset | null, scenePack: ScenePack | null) => {
+const canVisitStep = (step: WizardStep, _sourceAsset: SourceAsset | null, scenePack: ScenePack | null) => {
+  if (step === 'collection') {
+    return true;
+  }
+
   if (step === 'input') {
     return true;
   }
 
-  if (!sourceAsset || !scenePack) {
+  if (!scenePack) {
     return false;
   }
 
@@ -220,7 +271,8 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const revealAnimationFrameRef = useRef<number | null>(null);
   const revealAudioTimerRef = useRef<number[]>([]);
-  const [currentStep, setCurrentStep] = useState<WizardStep>('input');
+  const [currentStep, setCurrentStep] = useState<WizardStep>('collection');
+  const [experienceMode, setExperienceMode] = useState<ExperienceMode>('collection');
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [sourceAsset, setSourceAsset] = useState<SourceAsset | null>(null);
@@ -239,20 +291,42 @@ function App() {
   const [rightsModalOpen, setRightsModalOpen] = useState(false);
   const [rightsAcknowledged, setRightsAcknowledged] = useState(false);
   const [pendingStartAction, setPendingStartAction] = useState<PendingStartAction | null>(null);
+  const [studioGuideDismissed, setStudioGuideDismissed] = useState(false);
   const [activeGuideIndex, setActiveGuideIndex] = useState(0);
   const [loadingKind, setLoadingKind] = useState<'image' | 'prompt' | null>(null);
+  const [audioPack, setAudioPack] = useState<AudioPackId>('original');
   const [promptForm, setPromptForm] = useState({
     brandName: '',
     prompt: '',
   });
   const [promptAvailable, setPromptAvailable] = useState<boolean | null>(null);
   const deferredColumns = useDeferredValue(densityColumns);
+  const [selectedCollectionSku, setSelectedCollectionSku] = useState(
+    SIGNATURE_COLLECTION_SPEC.featuredSku,
+  );
 
   const activeVisualPreset = VISUAL_PRESETS.find((preset) => preset.id === visualPresetId) ?? VISUAL_PRESETS[0]!;
   const activeDensityPreset =
     DENSITY_PRESETS.find((preset) => preset.columns === densityColumns) ?? DENSITY_PRESETS[1]!;
+  const activeAudioPack = AUDIO_PACK_OPTIONS.find((option) => option.id === audioPack) ?? AUDIO_PACK_OPTIONS[0]!;
+  const collectionPack = useMemo(() => buildCollectionPack({
+    revealMode,
+    visualPresetId,
+  }), [revealMode, visualPresetId]);
+  const activeCollectionItem =
+    collectionPack.sets.find((item) => item.spec.sku === selectedCollectionSku) ??
+    collectionPack.sets[0] ??
+    null;
+  const currentScenePack =
+    experienceMode === 'collection' && currentStep !== 'collection'
+      ? activeCollectionItem?.scenePack ?? null
+      : scenePack;
+  const currentRealSetBuild =
+    experienceMode === 'collection' && currentStep !== 'collection'
+      ? activeCollectionItem?.realSet ?? null
+      : realSetBuild;
 
-  const cycleGuideIndex = useEffectEvent((direction: 1 | -1) => {
+  const cycleGuideIndex = useCallback((direction: 1 | -1) => {
     setActiveGuideIndex((current) => {
       const next = current + direction;
 
@@ -266,9 +340,9 @@ function App() {
 
       return next;
     });
-  });
+  }, []);
 
-  const clearRevealPlayback = useEffectEvent(() => {
+  const clearRevealPlayback = useCallback(() => {
     if (revealAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(revealAnimationFrameRef.current);
       revealAnimationFrameRef.current = null;
@@ -277,15 +351,15 @@ function App() {
     revealAudioTimerRef.current.forEach((timer) => window.clearTimeout(timer));
     revealAudioTimerRef.current = [];
     setRevealPlaying(false);
-  });
+  }, []);
 
-  const queueRightsGate = useEffectEvent((action: PendingStartAction) => {
+  const queueRightsGate = useCallback((action: PendingStartAction) => {
     setPendingStartAction(action);
     setRightsAcknowledged(false);
     setRightsModalOpen(true);
-  });
+  }, []);
 
-  const rebuildScenePack = useEffectEvent((asset: SourceAsset, columns: number) => {
+  const rebuildScenePack = useCallback((asset: SourceAsset, columns: number) => {
     const build = buildBlockBuildFromImageData(asset.imageData, { columns });
     const nextRealSet = buildRealSet({
       brandName: asset.brandName,
@@ -308,15 +382,16 @@ function App() {
       setStatus('ready');
       setError(null);
     });
-  });
+  }, [revealMode, visualPresetId]);
 
-  const startPromptBuild = useEffectEvent(async () => {
+  const startPromptBuild = useCallback(async () => {
     if (!promptForm.prompt.trim()) {
       setError('Describe what you want to build first.');
       return;
     }
 
     clearRevealPlayback();
+    setExperienceMode('commission');
     setStatus('loading');
     setLoadingKind('prompt');
     setError(null);
@@ -341,13 +416,13 @@ function App() {
       setStatus('error');
       setError(promptError instanceof Error ? promptError.message : 'We could not build that prompt yet.');
     }
-  });
+  }, [clearRevealPlayback, promptForm]);
 
-  const openFilePicker = useEffectEvent(() => {
+  const openFilePicker = useCallback(() => {
     fileInputRef.current?.click();
-  });
+  }, []);
 
-  const resumePendingStartAction = useEffectEvent(() => {
+  const resumePendingStartAction = useCallback(() => {
     if (pendingStartAction === 'file-picker') {
       openFilePicker();
     }
@@ -357,22 +432,22 @@ function App() {
     }
 
     setPendingStartAction(null);
-  });
+  }, [openFilePicker, pendingStartAction, startPromptBuild]);
 
-  const handleRightsContinue = useEffectEvent(() => {
+  const handleRightsContinue = useCallback(() => {
     setRightsAccepted(true);
     setRightsModalOpen(false);
     setRightsAcknowledged(false);
     resumePendingStartAction();
-  });
+  }, [resumePendingStartAction]);
 
-  const handleRightsCancel = useEffectEvent(() => {
+  const handleRightsCancel = useCallback(() => {
     setRightsModalOpen(false);
     setRightsAcknowledged(false);
     setPendingStartAction(null);
-  });
+  }, []);
 
-  const paintHero = useEffectEvent((pack: ScenePack, variant: 'hero' | 'poster' = 'hero') => {
+  const paintHero = useCallback((pack: ScenePack, variant: 'hero' | 'poster' = 'hero') => {
     const canvas = heroCanvasRef.current;
 
     if (!canvas) {
@@ -388,19 +463,19 @@ function App() {
     }
 
     render();
-  });
+  }, []);
 
-  const scheduleAudioCue = useEffectEvent((cue: string, delayMs: number, volume: number) => {
+  const scheduleAudioCue = useCallback((cue: AudioCueId, delayMs: number, volume: number) => {
     const timer = window.setTimeout(() => {
-      const audio = new Audio(`/audio/${cue}.wav`);
+      const audio = new Audio(resolveBrowserCueAudioPath(cue, audioPack));
       audio.volume = volume;
       void audio.play().catch(() => undefined);
     }, delayMs);
 
     revealAudioTimerRef.current.push(timer);
-  });
+  }, [audioPack]);
 
-  const playReveal = useEffectEvent((pack: ScenePack) => {
+  const playReveal = useCallback((pack: ScenePack) => {
     clearRevealPlayback();
     setRevealPlaying(true);
     setCurrentStep('studio');
@@ -438,7 +513,7 @@ function App() {
     };
 
     revealAnimationFrameRef.current = window.requestAnimationFrame(animate);
-  });
+  }, [clearRevealPlayback, scheduleAudioCue]);
 
   useEffect(() => {
     return () => {
@@ -471,12 +546,12 @@ function App() {
   }, [deferredColumns, rebuildScenePack, revealMode, sourceAsset, visualPresetId]);
 
   useEffect(() => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
-    paintHero(scenePack);
-  }, [paintHero, scenePack]);
+    paintHero(currentScenePack);
+  }, [currentScenePack, paintHero]);
 
   useEffect(() => {
     if (status !== 'loading') {
@@ -502,6 +577,7 @@ function App() {
     }
 
     clearRevealPlayback();
+    setExperienceMode('commission');
     setStatus('loading');
     setLoadingKind('image');
     setError(null);
@@ -532,9 +608,38 @@ function App() {
     await startPromptBuild();
   };
 
+  const openCollectionSet = (sku: string) => {
+    clearRevealPlayback();
+    setExperienceMode('collection');
+    setSelectedCollectionSku(sku);
+    setCurrentStep('box');
+    setStatus('ready');
+    setError(null);
+    setActiveInstructionStep(0);
+    setStudioExploded(false);
+    setInstructionSync(true);
+    setStudioAutoRotate(false);
+  };
+
+  const openCommissionFlow = () => {
+    clearRevealPlayback();
+    setExperienceMode('commission');
+    setCurrentStep('input');
+    setStatus('idle');
+    setError(null);
+    setSourceAsset(null);
+    setScenePack(null);
+    setRealSetBuild(null);
+    setActiveInstructionStep(0);
+    setStudioExploded(false);
+    setInstructionSync(true);
+    setStudioAutoRotate(false);
+  };
+
   const resetBuild = () => {
     clearRevealPlayback();
-    setCurrentStep('input');
+    setCurrentStep('collection');
+    setExperienceMode('collection');
     setStatus('idle');
     setError(null);
     setSourceAsset(null);
@@ -556,14 +661,15 @@ function App() {
     setPendingStartAction(null);
     setActiveGuideIndex(0);
     setLoadingKind(null);
+    setAudioPack('original');
   };
 
   const moveToNextStep = () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
-    if (currentStep === 'input') {
+    if (currentStep === 'collection' || currentStep === 'input') {
       setCurrentStep('box');
       return;
     }
@@ -600,7 +706,7 @@ function App() {
     }
 
     if (currentStep === 'box') {
-      setCurrentStep('input');
+      setCurrentStep(experienceMode === 'collection' ? 'collection' : 'input');
     }
   };
 
@@ -616,7 +722,7 @@ function App() {
   const downloadStill = () => {
     const canvas = heroCanvasRef.current;
 
-    if (!canvas || !scenePack) {
+    if (!canvas || !currentScenePack) {
       return;
     }
 
@@ -625,14 +731,14 @@ function App() {
         return;
       }
 
-      downloadBlob(blob, scenePack.exports.stillFileName);
+      downloadBlob(blob, currentScenePack.exports.stillFileName);
     });
   };
 
   const downloadBuilderStill = () => {
     const canvas = studioCanvasRef.current;
 
-    if (!canvas || !scenePack) {
+    if (!canvas || !currentScenePack) {
       return;
     }
 
@@ -641,61 +747,69 @@ function App() {
         return;
       }
 
-      downloadBlob(blob, scenePack.exports.builderStillFileName);
+      downloadBlob(blob, currentScenePack.exports.builderStillFileName);
     });
   };
 
   const downloadPosterFrame = () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
     const canvas = document.createElement('canvas');
-    canvas.width = scenePack.visual.canvasSize.width;
-    canvas.height = scenePack.visual.canvasSize.height;
-    drawHeroCanvas(canvas, scenePack, { variant: 'poster' });
+    canvas.width = currentScenePack.visual.canvasSize.width;
+    canvas.height = currentScenePack.visual.canvasSize.height;
+    drawHeroCanvas(canvas, currentScenePack, { variant: 'poster' });
 
     canvas.toBlob((blob) => {
       if (!blob) {
         return;
       }
 
-      downloadBlob(blob, scenePack.exports.posterFrameFileName ?? 'poster-frame.png');
+      downloadBlob(blob, currentScenePack.exports.posterFrameFileName ?? 'poster-frame.png');
     });
   };
 
   const downloadSceneJson = () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
-    const blob = new Blob([JSON.stringify(scenePack, null, 2)], {
+    const blob = new Blob([JSON.stringify(currentScenePack, null, 2)], {
       type: 'application/json',
     });
-    downloadBlob(blob, scenePack.exports.sceneFileName);
+    downloadBlob(blob, currentScenePack.exports.sceneFileName);
   };
 
   const downloadHandoffJson = () => {
-    if (!scenePack || !realSetBuild) {
+    if (!currentScenePack || !currentRealSetBuild) {
       return;
     }
+
+    const bricklinkManifest = summarizeBricklinkSourcing(currentScenePack.model.partManifest);
 
     const blob = new Blob(
       [
         JSON.stringify(
           {
-            sceneFile: scenePack.exports.sceneFileName,
-            stillFile: scenePack.exports.stillFileName,
-            builderStillFile: scenePack.exports.builderStillFileName,
-            instructionArtifactFile: scenePack.exports.instructionsFileName,
-            instructionDataFile: scenePack.exports.instructionsDataFileName,
-            manifestFile: scenePack.exports.manifestFileName,
-            filmFile: scenePack.exports.filmFileName,
-            mpdFile: realSetBuild.exportBundle.mpdFileName,
-            ioFile: realSetBuild.exportBundle.ioFileName,
-            validation: realSetBuild.validation,
-            sacredLine: scenePack.copy.sacredLine,
-            storyArcs: scenePack.storyArcs,
+            sceneFile: currentScenePack.exports.sceneFileName,
+            stillFile: currentScenePack.exports.stillFileName,
+            builderStillFile: currentScenePack.exports.builderStillFileName,
+            instructionArtifactFile: currentScenePack.exports.instructionsFileName,
+            instructionDataFile: currentScenePack.exports.instructionsDataFileName,
+            manifestFile: currentScenePack.exports.manifestFileName,
+            filmFile: currentScenePack.exports.filmFileName,
+            mpdFile: currentRealSetBuild.exportBundle.mpdFileName,
+            ioFile: currentRealSetBuild.exportBundle.ioFileName,
+            validation: currentRealSetBuild.validation,
+            sacredLine: currentScenePack.copy.sacredLine,
+            storyArcs: currentScenePack.storyArcs,
+            bricklinkSnapshotVersion: bricklinkManifest.bricklinkSnapshotVersion,
+            mappedPartCoverage: bricklinkManifest.mappedPartCoverage,
+            unavailablePartColorCount: bricklinkManifest.unavailablePartColorCount,
+            partManifest: bricklinkManifest.items,
+            audioPack,
+            audioPackBasePath: getAudioPackBasePath(audioPack),
           },
           null,
           2,
@@ -706,79 +820,88 @@ function App() {
       },
     );
 
-    downloadBlob(blob, scenePack.exports.handoffFileName);
+    downloadBlob(blob, currentScenePack.exports.handoffFileName);
   };
 
   const downloadInstructionsArtifact = () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
-    const blob = new Blob([buildInstructionArtifactHtml(scenePack)], {
+    const blob = new Blob([buildInstructionArtifactHtml(currentScenePack)], {
       type: 'text/html;charset=utf-8',
     });
-    downloadBlob(blob, scenePack.exports.instructionsFileName);
+    downloadBlob(blob, currentScenePack.exports.instructionsFileName);
   };
 
   const downloadInstructionsData = () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
-    const blob = new Blob([JSON.stringify(scenePack.instructions, null, 2)], {
+    const blob = new Blob([JSON.stringify(currentScenePack.instructions, null, 2)], {
       type: 'application/json',
     });
-    downloadBlob(blob, scenePack.exports.instructionsDataFileName);
+    downloadBlob(blob, currentScenePack.exports.instructionsDataFileName);
   };
 
   const downloadPartManifest = () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
-    const blob = new Blob([JSON.stringify(scenePack.model.partManifest, null, 2)], {
+    const bricklinkManifest = summarizeBricklinkSourcing(currentScenePack.model.partManifest);
+    const blob = new Blob([JSON.stringify(bricklinkManifest, null, 2)], {
       type: 'application/json',
     });
-    downloadBlob(blob, scenePack.exports.manifestFileName);
+    downloadBlob(blob, currentScenePack.exports.manifestFileName);
   };
 
   const downloadValidationReport = () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
-    const blob = new Blob([JSON.stringify(scenePack.model.validation, null, 2)], {
+    const blob = new Blob([JSON.stringify(currentScenePack.model.validation, null, 2)], {
       type: 'application/json',
     });
-    downloadBlob(blob, scenePack.exports.validationFileName);
+    downloadBlob(blob, currentScenePack.exports.validationFileName);
   };
 
   const downloadMpd = () => {
-    if (!realSetBuild) {
+    if (!currentRealSetBuild) {
       return;
     }
 
-    downloadBlob(createMpdBlob(realSetBuild.exportBundle), realSetBuild.exportBundle.mpdFileName);
+    downloadBlob(createMpdBlob(currentRealSetBuild.exportBundle), currentRealSetBuild.exportBundle.mpdFileName);
   };
 
   const downloadIo = () => {
-    if (!realSetBuild) {
+    if (!currentRealSetBuild) {
       return;
     }
 
-    downloadBlob(createIoBlob(realSetBuild.exportBundle), realSetBuild.exportBundle.ioFileName);
+    downloadBlob(createIoBlob(currentRealSetBuild.exportBundle), currentRealSetBuild.exportBundle.ioFileName);
   };
 
   const downloadRevealClip = async () => {
-    if (!scenePack) {
+    if (!currentScenePack) {
       return;
     }
 
     setDownloadingRevealClip(true);
 
     try {
-      const blob = await recordRevealClip(scenePack);
-      downloadBlob(blob, scenePack.exports.filmFileName.replace(/\.mp4$/i, '.webm'));
+      const blob = await recordRevealClip(currentScenePack);
+      const revealExtension = getRevealClipFileExtension(blob.type);
+      const revealFileName = /\.[a-z0-9]+$/i.test(currentScenePack.exports.filmFileName)
+        ? currentScenePack.exports.filmFileName.replace(/\.[a-z0-9]+$/i, `.${revealExtension}`)
+        : `${currentScenePack.exports.filmFileName}.${revealExtension}`;
+
+      downloadBlob(
+        blob,
+        revealFileName,
+      );
     } catch (clipError) {
       setError(clipError instanceof Error ? clipError.message : 'The reveal clip could not be exported.');
     } finally {
@@ -786,8 +909,74 @@ function App() {
     }
   };
 
-  const counts = scenePack?.instructions.colorBins ?? [];
-  const instructionPreviewHtml = scenePack ? buildInstructionArtifactHtml(scenePack) : '';
+  const counts = currentScenePack?.instructions.colorBins ?? [];
+  const activeInstruction = currentScenePack?.instructions.steps[activeInstructionStep] ?? null;
+  const instructionPreviewHtml = currentScenePack ? buildInstructionArtifactHtml(currentScenePack) : '';
+  const studioStepParts = activeInstruction?.partsNeeded.slice(0, 4) ?? [];
+  const bricklinkManifest = currentScenePack
+    ? summarizeBricklinkSourcing(currentScenePack.model.partManifest)
+    : null;
+  const catalogReferenceLinks = currentScenePack
+    ? buildCatalogReferenceLinks(currentScenePack.model.partManifest)
+    : [];
+  const bricklinkUnavailableCount = bricklinkManifest?.unavailablePartColorCount ?? 0;
+  const bricklinkCoverage = bricklinkManifest?.mappedPartCoverage.percentage ?? 0;
+  const promptAvailabilityCopy =
+    promptAvailable === null
+      ? 'Checking description mode...'
+      : promptAvailable
+        ? 'Description mode is ready'
+        : 'Description mode is unavailable right now.';
+  const showDebug = import.meta.env.DEV && new URLSearchParams(window.location.search).get('debug') === '1';
+  const renderAudioPackSelector = (title = 'Reveal soundtrack') => (
+    <>
+      <div className="card-heading compact">
+        <h3>{title}</h3>
+        <span>{activeAudioPack.label}</span>
+      </div>
+      <div className="density-row">
+        {AUDIO_PACK_OPTIONS.map((option) => (
+          <button
+            aria-pressed={audioPack === option.id}
+            className={audioPack === option.id ? 'choice-pill active' : 'choice-pill'}
+            key={option.id}
+            onClick={() => setAudioPack(option.id)}
+            type="button"
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
+  useEffect(() => {
+    if (currentStep === 'studio') {
+      setStudioGuideDismissed(false);
+    }
+  }, [currentStep, currentScenePack?.setIdentity.sku]);
+
+  if (currentStep === 'collection') {
+    return (
+      <div className="collection-page">
+        <CollectionShelf
+          activeSku={selectedCollectionSku}
+          collectionPack={collectionPack}
+          onOpenCommission={openCommissionFlow}
+          onSelectSet={openCollectionSet}
+        />
+        <RightsConfirmationModal
+          acknowledged={rightsAcknowledged}
+          onAcknowledgeChange={setRightsAcknowledged}
+          onCancel={handleRightsCancel}
+          onContinue={handleRightsContinue}
+          open={rightsModalOpen}
+        />
+        <LoadingInterstitial kind={loadingKind} open={status === 'loading'} />
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -795,19 +984,28 @@ function App() {
         <div className="shell-brand">
           <div className="blocks-badge">BLOCKS</div>
           <div>
-            <p className="eyebrow">Just Build with Blocks</p>
-            <h1>Upload it. Or describe it. Build the set.</h1>
+            <p className="eyebrow">
+              {experienceMode === 'collection' ? collectionPack.collection.name : 'Commission your set'}
+            </p>
+            <h1>
+              {experienceMode === 'collection'
+                ? 'Open the line. Inspect the build. Keep the set.'
+                : 'Turn your artwork into a set worth keeping.'}
+            </h1>
           </div>
         </div>
         <p className="shell-intro">
-          OpenAI owns the shell. Blocks own the delight. Start with a mark or an idea, reveal a
-          custom set box, then step into the builder studio and keep the parts, the story, and the
-          clip.
+          {experienceMode === 'collection'
+            ? `${collectionPack.collection.description} Choose a launch SKU, inspect the studio build, and keep the full export bundle.`
+            : 'Start with artwork or a short description. We will turn it into a premium set reveal, a guided build, and a keepsake-ready bundle.'}
         </p>
 
         <nav aria-label="Build ritual" className="wizard-nav">
-          {WIZARD_STEPS.map((step) => {
-            const available = canVisitStep(step.id, sourceAsset, scenePack);
+          {(experienceMode === 'commission'
+            ? WIZARD_STEPS.filter((step) => step.id !== 'collection')
+            : WIZARD_STEPS.filter((step) => step.id !== 'collection' && step.id !== 'input')
+          ).map((step) => {
+            const available = canVisitStep(step.id, sourceAsset, currentScenePack);
             const isActive = currentStep === step.id;
 
             return (
@@ -825,11 +1023,11 @@ function App() {
           })}
         </nav>
 
-        {currentStep === 'input' ? (
+        {currentStep === 'input' && experienceMode === 'commission' ? (
           <section className="rail-card">
             <div className="card-heading">
               <h2>Start a set</h2>
-              <span>Image or prompt</span>
+              <span>Artwork first</span>
             </div>
             <div className="input-launcher">
               <input
@@ -842,14 +1040,14 @@ function App() {
                 type="file"
               />
               <div className="upload-tray">
-                <strong>Image-first upload</strong>
-                <span>Best for logos, icons, transparent PNGs, and simple marks with clean contrast.</span>
+                <strong>Upload artwork</strong>
+                <span>Best for logos, icons, emblems, and other clean silhouettes with strong contrast.</span>
                 <button className="upload-launcher-button" onClick={handleUploadButtonClick} type="button">
                   Upload image
                 </button>
               </div>
               <div className="input-meta-row">
-                <span>PNG, JPG, or SVG. Original marks only.</span>
+                <span>PNG, JPG, or SVG. Use artwork you own or have permission to transform.</span>
                 <button
                   className="input-guidance-link"
                   onClick={() => setActiveGuideIndex(0)}
@@ -862,8 +1060,8 @@ function App() {
 
             <form className="prompt-card" onSubmit={handlePromptSubmit}>
               <div className="card-heading compact">
-                <h3>Or describe it</h3>
-                <span>{promptAvailable ? 'GPT path ready' : 'API key needed for live prompt builds'}</span>
+                <h3>Or describe the set</h3>
+                <span>{promptAvailabilityCopy}</span>
               </div>
               <label className="field-stack">
                 <span>Set name</span>
@@ -905,45 +1103,56 @@ function App() {
                 <img alt={`${sourceAsset.brandName} preview`} src={sourceAsset.previewUrl} />
                 <div>
                   <strong>{sourceAsset.brandName}</strong>
-                  <span>{sourceAsset.input.kind === 'image' ? 'Uploaded source' : 'Prompt concept cover art'}</span>
+                  <span>{sourceAsset.input.kind === 'image' ? 'Source artwork' : 'Concept artwork'}</span>
                 </div>
               </div>
             ) : null}
           </section>
         ) : null}
 
-        {currentStep === 'box' && scenePack ? (
+        {currentStep === 'box' && currentScenePack ? (
           <section className="rail-card">
             <div className="card-heading">
-              <h2>Set box reveal</h2>
-              <span>{scenePack.box.coverArtMode === 'prompt-concept' ? 'Prompt concept' : 'Signature set'}</span>
+              <h2>Set reveal</h2>
+              <span>{currentScenePack.box.coverArtMode === 'prompt-concept' ? 'Concept artwork' : 'Collector preview'}</span>
+            </div>
+            <div className="summary-panel">
+              <strong>{currentScenePack.box.title}</strong>
+              <p>{currentScenePack.box.subtitle}</p>
             </div>
             <div className="info-grid">
-              {scenePack.box.metadataRail.map((item) => (
+              {currentScenePack.box.metadataRail.map((item) => (
                 <article key={item.label}>
                   <span>{item.label}</span>
                   <strong>{item.value}</strong>
                 </article>
               ))}
             </div>
-            <p className="summary-copy">{scenePack.box.heroCaption}</p>
+            <p className="summary-copy">{currentScenePack.box.heroCaption}</p>
             <div className="builder-summary">
-              <span>Model: {scenePack.model.style}</span>
-              <span>Validation: {scenePack.model.validation.valid ? 'pass' : 'review'}</span>
-              <span>Collection: {scenePack.setIdentity.collection}</span>
+              <span>{currentScenePack.instructions.countTotals.totalPieces} pieces</span>
+              <span>{currentScenePack.model.validation.valid ? 'Build check passed' : 'Build check needs review'}</span>
+              <span>{currentScenePack.setIdentity.collection}</span>
             </div>
           </section>
         ) : null}
 
-        {currentStep === 'studio' && scenePack ? (
-          <section className="rail-card">
+        {currentStep === 'studio' && currentScenePack ? (
+          <section className="rail-card studio-control-card">
             <div className="card-heading">
-              <h2>Builder studio</h2>
+              <h2>Studio companion</h2>
               <span>Guided 3D</span>
+            </div>
+            <div className="summary-panel studio-summary-panel">
+              <strong>Keep the studio playful and readable</strong>
+              <p>
+                This is the calm build desk, not a dense editor. Pick a phase, adjust the view, and keep the
+                reveal ready for the big moment.
+              </p>
             </div>
 
             <div className="density-row">
-              {scenePack.instructions.steps.map((step, index) => (
+              {currentScenePack.instructions.steps.map((step, index) => (
                 <button
                   className={activeInstructionStep === index ? 'choice-pill active' : 'choice-pill'}
                   key={step.id}
@@ -963,7 +1172,7 @@ function App() {
                   onChange={(event) => setInstructionSync(event.target.checked)}
                   type="checkbox"
                 />
-                <span>Instruction sync</span>
+                <span>Follow the book</span>
               </label>
               <label className="toggle-chip">
                 <input
@@ -971,7 +1180,7 @@ function App() {
                   onChange={(event) => setStudioExploded(event.target.checked)}
                   type="checkbox"
                 />
-                <span>Explode view</span>
+                <span>Exploded view</span>
               </label>
               <label className="toggle-chip">
                 <input
@@ -979,38 +1188,41 @@ function App() {
                   onChange={(event) => setStudioAutoRotate(event.target.checked)}
                   type="checkbox"
                 />
-                <span>Auto rotate</span>
+                <span>Slow rotate</span>
               </label>
             </div>
 
             <div className="builder-summary">
-              <span>Camera: {scenePack.builder.cameraPreset}</span>
-              <span>Scene: {scenePack.builder.scenePreset}</span>
-              <span>Step {activeInstructionStep + 1} / {scenePack.instructions.steps.length}</span>
+              <span>Step {activeInstructionStep + 1} of {currentScenePack.instructions.steps.length}</span>
+              <span>{activeInstruction?.partCount ?? 0} pieces in this phase</span>
+              <span>{instructionSync ? 'Following the instruction book' : 'Free explore mode'}</span>
             </div>
+
+            {renderAudioPackSelector('Studio soundtrack')}
 
             <button
               className="primary-action"
               disabled={revealPlaying}
               onClick={() => {
                 setStudioAutoRotate(true);
-                playReveal(scenePack);
+                playReveal(currentScenePack);
               }}
               type="button"
             >
-              {revealPlaying ? 'Playing reveal…' : 'Play reveal'}
+              {revealPlaying ? 'Playing reveal…' : 'Play the reveal'}
             </button>
           </section>
         ) : null}
 
-        {currentStep === 'instructions' && scenePack ? (
+        {currentStep === 'instructions' && currentScenePack ? (
           <section className="rail-card">
             <div className="card-heading">
-              <h2>Build sheet</h2>
-              <span>{scenePack.instructions.countTotals.totalPieces} pieces</span>
+              <h2>Instruction book</h2>
+              <span>{currentScenePack.instructions.countTotals.totalPieces} pieces</span>
             </div>
+            <p className="summary-copy">Clear phases, readable parts calls, and a final check before you keep the set.</p>
             <ol className="instruction-list">
-              {scenePack.instructions.steps.map((step) => (
+              {currentScenePack.instructions.steps.map((step) => (
                 <li key={step.id}>
                   <strong>{step.title}</strong>
                   <span>{step.detail}</span>
@@ -1021,31 +1233,106 @@ function App() {
           </section>
         ) : null}
 
-        {currentStep === 'keep' && scenePack ? (
+        {currentStep === 'keep' && currentScenePack ? (
           <section className="rail-card">
             <div className="card-heading">
-              <h2>Keep the set</h2>
-              <span>Exports + tease</span>
+              <h2>Take it with you</h2>
+              <span>Share, source, and keep</span>
             </div>
-            <div className="export-grid">
-              <button onClick={downloadStill} type="button">Download set box</button>
-              <button onClick={downloadBuilderStill} type="button">Download studio still</button>
-              <button onClick={downloadInstructionsArtifact} type="button">Download instruction book</button>
-              <button onClick={downloadInstructionsData} type="button">Download instructions JSON</button>
-              <button onClick={downloadPartManifest} type="button">Download part manifest</button>
-              <button onClick={downloadValidationReport} type="button">Download validation report</button>
-              <button onClick={downloadMpd} type="button">Download MPD</button>
-              <button onClick={downloadIo} type="button">Download IO bundle</button>
-              <button disabled={downloadingRevealClip} onClick={downloadRevealClip} type="button">
-                {downloadingRevealClip ? 'Rendering clip…' : 'Download reveal clip'}
-              </button>
-              <button onClick={downloadPosterFrame} type="button">Download poster frame</button>
-              <button onClick={downloadSceneJson} type="button">Download scene JSON</button>
-              <button onClick={downloadHandoffJson} type="button">Download handoff pack</button>
+            {renderAudioPackSelector()}
+            <div className="keep-grid">
+              <section className="keep-section">
+                <div className="card-heading compact">
+                  <h3>Share it</h3>
+                  <span>Stills + reveal</span>
+                </div>
+                <div className="export-grid">
+                  <button onClick={downloadStill} type="button">Download set box</button>
+                  <button onClick={downloadBuilderStill} type="button">Download studio still</button>
+                  <button onClick={downloadPosterFrame} type="button">Download poster frame</button>
+                  <button disabled={downloadingRevealClip} onClick={downloadRevealClip} type="button">
+                    {downloadingRevealClip ? 'Rendering clip…' : 'Download reveal clip'}
+                  </button>
+                </div>
+              </section>
+              <section className="keep-section">
+                <div className="card-heading compact">
+                  <h3>Build with it</h3>
+                  <span>Instructions + model files</span>
+                </div>
+                <div className="export-grid">
+                  <button onClick={downloadInstructionsArtifact} type="button">Download instruction book</button>
+                  <button onClick={downloadPartManifest} type="button">Download part manifest</button>
+                  <button onClick={downloadMpd} type="button">Download MPD</button>
+                  <button onClick={downloadIo} type="button">Download IO bundle</button>
+                </div>
+              </section>
+              <section className="keep-section keep-section-sourcing">
+                <div className="card-heading compact">
+                  <h3>Catalog-backed sourcing</h3>
+                  <span>{bricklinkCoverage}% linked</span>
+                </div>
+                <p className="summary-copy">
+                  Reference links only. Use them to research parts and color pairings after export, not as a
+                  fulfillment, pricing, or stock guarantee.
+                </p>
+                <div className="sourcing-metric-grid">
+                  <article>
+                    <span>Mapped line items</span>
+                    <strong>
+                      {bricklinkManifest?.mappedPartCoverage.mappedLineItems ?? 0}
+                      {' '}of{' '}
+                      {bricklinkManifest?.mappedPartCoverage.totalLineItems ?? 0}
+                    </strong>
+                  </article>
+                  <article>
+                    <span>Unavailable pairings</span>
+                    <strong>{bricklinkUnavailableCount}</strong>
+                  </article>
+                </div>
+                {catalogReferenceLinks.length > 0 ? (
+                  <div className="sourcing-link-list">
+                    {catalogReferenceLinks.map((item) => (
+                      <a
+                        href={item.bricklinkCatalogUrl ?? undefined}
+                        key={item.key}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <strong>{item.partName}</strong>
+                        <span>{item.bricklinkColorName ?? item.colorName}</span>
+                        <small>
+                          {item.count} needed
+                          {item.bricklinkItemNo ? ` • Item ${item.bricklinkItemNo}` : ''}
+                        </small>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="sourcing-empty-state">
+                    Catalog links will appear here when the current set has BrickLink part mappings attached.
+                  </div>
+                )}
+              </section>
+              {showDebug ? (
+                <section className="keep-section keep-section-debug">
+                  <div className="card-heading compact">
+                    <h3>Debug diagnostics</h3>
+                    <span>Raw bundle files</span>
+                  </div>
+                  <div className="export-grid">
+                    <button onClick={downloadInstructionsData} type="button">Download instructions JSON</button>
+                    <button onClick={downloadValidationReport} type="button">Download validation report</button>
+                    <button onClick={downloadSceneJson} type="button">Download scene JSON</button>
+                    <button onClick={downloadHandoffJson} type="button">Download handoff pack</button>
+                  </div>
+                </section>
+              ) : null}
             </div>
             <div className="commerce-card">
-              <strong>{scenePack.commerce.ctaLabel}</strong>
-              <span>{scenePack.commerce.heroMessage}</span>
+              <strong>Build the real set</strong>
+              <span>{currentScenePack.commerce.heroMessage}</span>
+              <small>Start with the instruction book, then move into the model files when you want more control.</small>
             </div>
           </section>
         ) : null}
@@ -1053,14 +1340,14 @@ function App() {
         <div className="wizard-actions">
           <button
             className="secondary"
-            disabled={currentStep === 'input'}
+            disabled={currentStep === 'input' && experienceMode === 'commission'}
             onClick={moveToPreviousStep}
             type="button"
           >
             Back
           </button>
           <button
-            disabled={!scenePack || currentStep === 'keep'}
+            disabled={!currentScenePack || currentStep === 'keep'}
             onClick={moveToNextStep}
             type="button"
           >
@@ -1076,9 +1363,9 @@ function App() {
             ? error
             : status === 'loading'
               ? 'Preparing your signature set'
-              : scenePack
-                ? `${scenePack.brand.name} is ready.`
-                : 'This shell is local-first. Prompt mode wakes up when the server has an OpenAI key.'}
+              : currentScenePack
+                ? `${currentScenePack.brand.name} is ready to explore.`
+                : 'Upload artwork or describe a set to begin.'}
         </p>
       </aside>
 
@@ -1089,38 +1376,141 @@ function App() {
               <p className="eyebrow">Stage</p>
               <h2>
                 {currentStep === 'input'
-                  ? 'Set preview'
+                  ? 'Choose your starting point'
                   : currentStep === 'box'
-                    ? 'Custom set box'
+                    ? 'Your set reveal'
                     : currentStep === 'studio'
-                      ? 'Builder studio'
+                      ? 'Build studio'
                       : currentStep === 'instructions'
-                        ? 'Instructions and parts'
-                        : 'Keepsake exports'}
+                        ? 'Instruction book'
+                        : 'Take it with you'}
               </h2>
             </div>
-            {scenePack ? <span className="stage-chip">{scenePack.box.badge.serial}</span> : null}
+            {currentScenePack ? <span className="stage-chip">{currentScenePack.box.badge.serial}</span> : null}
           </div>
 
-          {scenePack ? (
+          {currentScenePack ? (
             <>
               {(currentStep === 'input' || currentStep === 'box' || currentStep === 'keep') && (
                 <canvas
                   className="hero-canvas"
-                  height={scenePack.visual.canvasSize.height}
+                  height={currentScenePack.visual.canvasSize.height}
                   ref={heroCanvasRef}
-                  width={scenePack.visual.canvasSize.width}
+                  width={currentScenePack.visual.canvasSize.width}
                 />
               )}
               {currentStep === 'studio' && (
-                <BuilderStudio3D
-                  activeStepIndex={activeInstructionStep}
-                  autoRotate={studioAutoRotate}
-                  canvasRef={studioCanvasRef}
-                  exploded={studioExploded}
-                  instructionSync={instructionSync}
-                  scenePack={scenePack}
-                />
+                <div className="studio-stage-layout">
+                  <div className="studio-stage-shell">
+                    {!studioGuideDismissed ? (
+                      <section className="studio-guide-card">
+                        <div className="studio-guide-heading">
+                          <div>
+                            <p className="eyebrow">Studio companion</p>
+                            <h3>Welcome to your build studio</h3>
+                          </div>
+                          <button
+                            className="studio-guide-toggle"
+                            onClick={() => setStudioGuideDismissed(true)}
+                            type="button"
+                          >
+                            Hide guide
+                          </button>
+                        </div>
+                        <p>
+                          Orbit the set, keep one eye on the book, and open the spacing only when you want
+                          a clearer read on the build.
+                        </p>
+                        <div className="studio-guide-grid">
+                          <article>
+                            <span>01</span>
+                            <strong>Orbit for shape</strong>
+                            <p>Drag around the model to understand the silhouette before you step in closer.</p>
+                          </article>
+                          <article>
+                            <span>02</span>
+                            <strong>Follow one phase</strong>
+                            <p>Use the step pills to stay with the current phase instead of scanning the whole set.</p>
+                          </article>
+                          <article>
+                            <span>03</span>
+                            <strong>Play the reveal</strong>
+                            <p>Turn on the soundtrack when you want the full cinematic walkthrough of the build.</p>
+                          </article>
+                        </div>
+                      </section>
+                    ) : (
+                      <button
+                        className="studio-guide-toggle studio-guide-toggle-inline"
+                        onClick={() => setStudioGuideDismissed(false)}
+                        type="button"
+                      >
+                        Show studio guide
+                      </button>
+                    )}
+
+                    <div className="studio-canvas-shell">
+                      <Suspense
+                        fallback={(
+                          <div className="studio-loading" role="status">
+                            Loading studio…
+                          </div>
+                        )}
+                      >
+                        <BuilderStudio3D
+                          activeStepIndex={activeInstructionStep}
+                          autoRotate={studioAutoRotate}
+                          canvasRef={studioCanvasRef}
+                          exploded={studioExploded}
+                          instructionSync={instructionSync}
+                          scenePack={currentScenePack}
+                        />
+                      </Suspense>
+                    </div>
+
+                    <div className="studio-stage-footer">
+                      <span>{instructionSync ? 'Book sync on' : 'Free explore mode'}</span>
+                      <span>{studioExploded ? 'Exploded view enabled' : 'Tight assembly view'}</span>
+                      <span>{activeAudioPack.label}</span>
+                    </div>
+                  </div>
+
+                  <aside className="studio-inspector-card" aria-label="Current build step">
+                    <div className="card-heading compact">
+                      <h3>Current build step</h3>
+                      <span>Step {activeInstructionStep + 1} of {currentScenePack.instructions.steps.length}</span>
+                    </div>
+                    <div className="studio-inspector-callout">
+                      <strong>{activeInstruction?.title ?? 'Preview the full set'}</strong>
+                      <p>{activeInstruction?.detail ?? 'Move through the phases to see how the set comes together.'}</p>
+                    </div>
+                    <div className="studio-inspector-metrics">
+                      <article>
+                        <span>Pieces in phase</span>
+                        <strong>{activeInstruction?.partCount ?? 0}</strong>
+                      </article>
+                      <article>
+                        <span>Camera</span>
+                        <strong>{studioAutoRotate ? 'Slow orbit' : 'Manual orbit'}</strong>
+                      </article>
+                    </div>
+                    <div className="studio-inspector-parts">
+                      <span>Next parts to notice</span>
+                      {studioStepParts.length > 0 ? (
+                        <ul>
+                          {studioStepParts.map((part) => (
+                            <li key={`${part.partId}-${part.colorId}`}>
+                              <strong>{part.count}x {part.partName}</strong>
+                              <span>{part.colorName}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>The active phase will list its main parts here as soon as step data is available.</p>
+                      )}
+                    </div>
+                  </aside>
+                </div>
               )}
               {currentStep === 'instructions' && (
                 <div className="instructions-layout">
@@ -1132,12 +1522,12 @@ function App() {
                   <div className="parts-panel">
                     <div className="parts-heading">
                       <strong>Part manifest</strong>
-                      <span>{scenePack.instructions.countTotals.uniqueParts} part kinds</span>
+                      <span>{currentScenePack.instructions.countTotals.uniqueParts} part kinds</span>
                     </div>
                     <div className="builder-summary">
-                      <span>Theme: {scenePack.instructions.theme}</span>
-                      <span>Phases: {scenePack.instructions.steps.length}</span>
-                      <span>Pieces: {scenePack.instructions.countTotals.totalPieces}</span>
+                      <span>Theme: {currentScenePack.instructions.theme}</span>
+                      <span>Phases: {currentScenePack.instructions.steps.length}</span>
+                      <span>Pieces: {currentScenePack.instructions.countTotals.totalPieces}</span>
                     </div>
                     <div className="count-grid">
                       {counts.map((matchedColor) => {
@@ -1172,11 +1562,10 @@ function App() {
                   <div className="placeholder-hero" />
                 </div>
                 <div className="placeholder-copy">
-                  <strong>Set-box first.</strong>
+                  <strong>Your set reveal will appear here.</strong>
                   <p>
-                    The first frame should already feel like a product: blue packaging field, red
-                    badge, clean OpenAI type, and one bright block-built hero image people want to
-                    share.
+                    Start with artwork or a short description. We will turn it into a boxed set
+                    preview, a guided build, and a bundle you can keep.
                   </p>
                 </div>
               </div>
@@ -1184,15 +1573,15 @@ function App() {
           )}
         </section>
 
-        {scenePack ? (
+        {currentScenePack ? (
           <section className="lower-grid">
             <article className="story-card">
               <div className="card-heading compact">
-                <h3>Story arcs</h3>
-                <span>Film handoff</span>
+                <h3>Reveal highlights</h3>
+                <span>What the set is promising</span>
               </div>
               <div className="story-list">
-                {scenePack.storyArcs.map((arc) => (
+                {currentScenePack.storyArcs.map((arc) => (
                   <div key={arc.id}>
                     <strong>{arc.headline}</strong>
                     <p>{arc.summary}</p>
@@ -1203,28 +1592,54 @@ function App() {
 
             <article className="story-card">
               <div className="card-heading compact">
-                <h3>Builder facts</h3>
-                <span>{activeVisualPreset.label}</span>
+                <h3>Build at a glance</h3>
+                <span>{currentScenePack.setIdentity.name}</span>
               </div>
               <div className="fact-grid">
                 <div>
-                  <span>Density</span>
-                  <strong>{activeDensityPreset.label}</strong>
+                  <span>Pieces</span>
+                  <strong>{currentScenePack.instructions.countTotals.totalPieces}</strong>
                 </div>
                 <div>
-                  <span>World</span>
-                  <strong>{scenePack.world.cameraEmotion}</strong>
+                  <span>Part kinds</span>
+                  <strong>{currentScenePack.instructions.countTotals.uniqueParts}</strong>
                 </div>
                 <div>
-                  <span>Sacred line</span>
-                  <strong>{scenePack.copy.sacredLine}</strong>
+                  <span>Line</span>
+                  <strong>{currentScenePack.setIdentity.launchLine}</strong>
                 </div>
                 <div>
-                  <span>Prompt mode</span>
-                  <strong>{scenePack.input.kind}</strong>
+                  <span>Set number</span>
+                  <strong>{currentScenePack.setIdentity.sku}</strong>
                 </div>
               </div>
             </article>
+            {showDebug ? (
+              <article className="story-card debug-card">
+                <div className="card-heading compact">
+                  <h3>Debug diagnostics</h3>
+                  <span>{activeVisualPreset.label}</span>
+                </div>
+                <div className="fact-grid">
+                  <div>
+                    <span>Build ID</span>
+                    <strong>{currentScenePack.setIdentity.buildId}</strong>
+                  </div>
+                  <div>
+                    <span>Input kind</span>
+                    <strong>{currentScenePack.input.kind}</strong>
+                  </div>
+                  <div>
+                    <span>Camera</span>
+                    <strong>{currentScenePack.builder.cameraPreset}</strong>
+                  </div>
+                  <div>
+                    <span>Density</span>
+                    <strong>{activeDensityPreset.label}</strong>
+                  </div>
+                </div>
+              </article>
+            ) : null}
           </section>
         ) : null}
       </main>

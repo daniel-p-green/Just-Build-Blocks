@@ -32,16 +32,16 @@ export function RightsConfirmationModal({
 
         <div className="rights-modal-copy">
           <p className="eyebrow">Rights confirmation</p>
-          <h2 id="rights-confirmation-title">Before we build the set</h2>
+          <h2 id="rights-confirmation-title">Before we start</h2>
           <p id="rights-confirmation-detail">
-            This upload flow is for original block-set interpretations of marks and ideas you have
-            the right to use. We do not generate official branded retail packaging or counterfeit
-            goods.
+            This experience turns artwork and ideas you have permission to use into an original
+            collectible set. It is built for custom interpretations, not official licensed retail
+            products.
           </p>
           <ul className="rights-checklist">
-            <li>You own the logo, image, or prompt content, or you have permission to use it.</li>
-            <li>You want an original collectible interpretation, not an official product clone.</li>
-            <li>You understand the result is a custom concept set, not a licensed retail item.</li>
+            <li>You own the artwork or text, or you have permission to use it.</li>
+            <li>You want an original set interpretation rather than an official retail copy.</li>
+            <li>You understand the result is a custom concept set, not a licensed product.</li>
           </ul>
         </div>
 
@@ -51,7 +51,7 @@ export function RightsConfirmationModal({
             onChange={(event) => onAcknowledgeChange(event.target.checked)}
             type="checkbox"
           />
-          <span>I confirm I have the rights to use this image or prompt.</span>
+          <span>I confirm I have permission to use this artwork or description.</span>
         </label>
 
         <div className="rights-modal-actions">

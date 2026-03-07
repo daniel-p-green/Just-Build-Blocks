@@ -140,7 +140,7 @@ export const BrandStill16x9: FC<BrandStillProps> = ({ scenePack }) => {
                   letterSpacing: '-0.03em',
                 }}
               >
-                Built with GPT-5.4 + Codex
+                Collector-grade display set
               </div>
             </div>
 

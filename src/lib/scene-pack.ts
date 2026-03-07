@@ -18,7 +18,7 @@ import {
   type VoiceMode,
   type WowMode,
 } from './experience-plan';
-import { buildRealSet, type RealSetBuild } from './set-engine';
+import { buildRealSet, type RealSetBuild, type SetPartManifestItem } from './set-engine';
 
 export const SCENEPACK_VERSION = '3.0.0';
 
@@ -100,17 +100,7 @@ export type InstructionStep = {
   }>;
 };
 
-export type PartManifestItem = {
-  colorCode: number;
-  colorId: string;
-  colorName: string;
-  count: number;
-  hex: string;
-  key: string;
-  partId: string;
-  partName: string;
-  role: string;
-};
+export type PartManifestItem = SetPartManifestItem;
 
 export type ScenePack = {
   input: ConceptInput;
@@ -122,8 +112,11 @@ export type ScenePack = {
   setIdentity: {
     name: string;
     collection: string;
+    launchLine: string;
+    sku: string;
+    accentColor: string;
     buildId: string;
-    heroModel: 'Codex Signature Set' | 'Custom Signature Set';
+    heroModel: string;
   };
   build: {
     grid: BlockBuild;
@@ -140,6 +133,10 @@ export type ScenePack = {
   };
   packaging: {
     style: 'signature-box';
+    accentColor: string;
+    heroShotAngle: RealSetBuild['spec']['packagingAngle'];
+    benchProps: string[];
+    stickerSystem: string[];
     heroCaption: string;
     coverArtMode: 'signature-set' | 'prompt-concept';
     metadataRail: BoxMetadataItem[];
@@ -170,9 +167,11 @@ export type ScenePack = {
     boardTheme: BuilderBoardTheme;
     partTrayEmphasis: BuilderTrayEmphasis;
     densityColumns: number;
+    accentColor: string;
   };
   instructions: {
     theme: 'airy-sky-blue';
+    bookTitle: string;
     steps: InstructionStep[];
     partManifest: PartManifestItem[];
     countTotals: {
@@ -303,7 +302,15 @@ const BoxMetadataItemSchema = z.object({
   value: z.string(),
 });
 
+const PartManifestRoleSchema = z.enum(['backing', 'frame', 'art']);
+
 const PartManifestItemSchema = z.object({
+  bricklinkAvailableInColor: z.boolean(),
+  bricklinkCatalogUrl: z.string().nullable(),
+  bricklinkColorId: z.number().nullable(),
+  bricklinkColorName: z.string().nullable(),
+  bricklinkItemNo: z.string().nullable(),
+  bricklinkItemType: z.literal('P').nullable(),
   colorCode: z.number(),
   colorId: z.string(),
   colorName: z.string(),
@@ -312,7 +319,7 @@ const PartManifestItemSchema = z.object({
   key: z.string(),
   partId: z.string(),
   partName: z.string(),
-  role: z.string(),
+  role: PartManifestRoleSchema,
 });
 
 const InstructionStepSchema = z.object({
@@ -343,8 +350,11 @@ export const ScenePackSchema = z.object({
   setIdentity: z.object({
     name: z.string(),
     collection: z.string(),
+    launchLine: z.string(),
+    sku: z.string(),
+    accentColor: z.string(),
     buildId: z.string(),
-    heroModel: z.enum(['Codex Signature Set', 'Custom Signature Set']),
+    heroModel: z.string(),
   }),
   build: z.object({
     grid: BlockBuildSchema,
@@ -361,6 +371,10 @@ export const ScenePackSchema = z.object({
   }),
   packaging: z.object({
     style: z.literal('signature-box'),
+    accentColor: z.string(),
+    heroShotAngle: z.enum(['three-quarter-left', 'three-quarter-right']),
+    benchProps: z.array(z.string()),
+    stickerSystem: z.array(z.string()),
     heroCaption: z.string(),
     coverArtMode: z.enum(['signature-set', 'prompt-concept']),
     metadataRail: z.array(BoxMetadataItemSchema),
@@ -391,9 +405,11 @@ export const ScenePackSchema = z.object({
     boardTheme: z.enum(['openai-studio', 'playfield', 'night-bench']),
     partTrayEmphasis: z.enum(['balanced', 'counts-first', 'color-first']),
     densityColumns: z.number(),
+    accentColor: z.string(),
   }),
   instructions: z.object({
     theme: z.literal('airy-sky-blue'),
+    bookTitle: z.string(),
     steps: z.array(InstructionStepSchema),
     partManifest: z.array(PartManifestItemSchema),
     countTotals: z.object({
@@ -508,20 +524,24 @@ const findVisualPreset = (presetId: VisualPresetId) =>
   VISUAL_PRESETS.find((preset) => preset.id === presetId) ?? VISUAL_PRESETS[0]!;
 
 const buildPromptBoxFields = (promptConcept: PromptConcept | undefined, brandName: string, realSet: RealSetBuild) => ({
-  title: promptConcept?.boxTitle ?? realSet.spec.flagshipName,
+  title: promptConcept?.boxTitle ?? realSet.spec.displayTitle ?? realSet.spec.flagshipName,
   subtitle:
     promptConcept?.boxSubtitle ??
-    (realSet.spec.modelStyle === 'monochrome-signature'
-      ? 'Signature monochrome collectible'
-      : 'Custom display set'),
+    (realSet.spec.displaySubtitle ??
+      (realSet.spec.collection === 'BLOCKS Signature Collection'
+      ? realSet.spec.launchLine
+      : realSet.spec.modelStyle === 'monochrome-signature'
+        ? 'Signature monochrome collectible'
+        : 'Custom display set')),
   serial:
     promptConcept?.badgeSerial ??
     realSet.spec.buildId,
   caption:
     promptConcept?.coverConcept.caption ??
-    (realSet.spec.modelStyle === 'monochrome-signature'
-      ? 'A premium black-and-white Codex collectible with real parts, instructions, and exports.'
-      : `A collectible build set sparked by ${brandName}.`),
+    (realSet.spec.packagingBrief ||
+      (realSet.spec.modelStyle === 'monochrome-signature'
+        ? 'A premium black-and-white collectible with real parts, instructions, and exports.'
+        : `A collectible build set sparked by ${brandName}.`)),
 });
 
 const toColorBins = (partManifest: PartManifestItem[]) =>
@@ -580,6 +600,7 @@ const buildBuilderPlan = ({
         : 'openai-studio',
   partTrayEmphasis: realSet.spec.modelStyle === 'monochrome-signature' ? 'counts-first' : 'balanced',
   densityColumns: realSet.displayGrid.columns,
+  accentColor: realSet.spec.accentColor,
 });
 
 export const buildScenePack = ({
@@ -644,10 +665,13 @@ export const buildScenePack = ({
       uploadedAt,
     },
     setIdentity: {
-      name: lockedRealSet.spec.flagshipName,
+      name: lockedRealSet.spec.displayTitle ?? lockedRealSet.spec.flagshipName,
       collection: lockedRealSet.spec.collection,
+      launchLine: lockedRealSet.spec.launchLine,
+      sku: lockedRealSet.spec.sku,
+      accentColor: lockedRealSet.spec.accentColor,
       buildId: lockedRealSet.spec.buildId,
-      heroModel: lockedRealSet.spec.modelStyle === 'monochrome-signature' ? 'Codex Signature Set' : 'Custom Signature Set',
+      heroModel: lockedRealSet.spec.flagshipName,
     },
     build: {
       grid: lockedRealSet.displayGrid,
@@ -664,6 +688,10 @@ export const buildScenePack = ({
     },
     packaging: {
       style: 'signature-box',
+      accentColor: lockedRealSet.spec.accentColor,
+      heroShotAngle: lockedRealSet.spec.packagingAngle,
+      benchProps: ['parts tray', 'collector card', 'instruction slip'],
+      stickerSystem: ['launch-line', 'collector-grade', 'desk-display'],
       heroCaption: boxFields.caption,
       coverArtMode: input.kind === 'prompt' ? 'prompt-concept' : 'signature-set',
       metadataRail,
@@ -694,6 +722,7 @@ export const buildScenePack = ({
     }),
     instructions: {
       theme: 'airy-sky-blue',
+      bookTitle: `${boxFields.title} Instruction Book`,
       steps: instructionSteps,
       partManifest,
       countTotals: {

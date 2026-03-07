@@ -2,6 +2,7 @@ import type { FC } from 'react';
 import { Composition, Still } from 'remotion';
 import { z } from 'zod';
 
+import { AUDIO_PACK_IDS } from '../lib/audio-pack';
 import type { ScenePack } from '../lib/scene-pack';
 import { ArcScene16x9 } from './ArcScene16x9';
 import { BrandStill16x9 } from './BrandStill16x9';
@@ -10,17 +11,25 @@ import { RevealScene16x9 } from './RevealScene16x9';
 import { sampleScenePack } from './sample-scene-pack';
 
 const ScenePackValueSchema: z.ZodType<ScenePack> = z.custom<ScenePack>();
+const AudioPackSchema = z.enum(AUDIO_PACK_IDS).optional();
 const ScenePackPropsSchema = z.object({ scenePack: ScenePackValueSchema });
 const RevealFaithfulSchema = z.object({
+  audioPack: AudioPackSchema,
   revealMode: z.literal('faithful').optional(),
   scenePack: ScenePackValueSchema,
 });
 const RevealImaginationSchema = z.object({
+  audioPack: AudioPackSchema,
   revealMode: z.literal('imagination').optional(),
   scenePack: ScenePackValueSchema,
 });
 const ArcSceneSchema = z.object({
   arcIndex: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  audioPack: AudioPackSchema,
+  scenePack: ScenePackValueSchema,
+});
+const MasterConceptFilmSchema = z.object({
+  audioPack: AudioPackSchema,
   scenePack: ScenePackValueSchema,
 });
 
@@ -37,7 +46,7 @@ export const RemotionRoot: FC = () => {
       />
       <Composition
         component={RevealScene16x9}
-        defaultProps={{ revealMode: 'faithful', scenePack: sampleScenePack }}
+        defaultProps={{ audioPack: 'original', revealMode: 'faithful', scenePack: sampleScenePack }}
         durationInFrames={480}
         fps={30}
         height={900}
@@ -47,7 +56,7 @@ export const RemotionRoot: FC = () => {
       />
       <Composition
         component={RevealScene16x9}
-        defaultProps={{ revealMode: 'imagination', scenePack: sampleScenePack }}
+        defaultProps={{ audioPack: 'original', revealMode: 'imagination', scenePack: sampleScenePack }}
         durationInFrames={480}
         fps={30}
         height={900}
@@ -57,7 +66,7 @@ export const RemotionRoot: FC = () => {
       />
       <Composition
         component={ArcScene16x9}
-        defaultProps={{ arcIndex: 0, scenePack: sampleScenePack }}
+        defaultProps={{ arcIndex: 0, audioPack: 'original', scenePack: sampleScenePack }}
         durationInFrames={270}
         fps={30}
         height={900}
@@ -67,7 +76,7 @@ export const RemotionRoot: FC = () => {
       />
       <Composition
         component={ArcScene16x9}
-        defaultProps={{ arcIndex: 1, scenePack: sampleScenePack }}
+        defaultProps={{ arcIndex: 1, audioPack: 'original', scenePack: sampleScenePack }}
         durationInFrames={330}
         fps={30}
         height={900}
@@ -77,7 +86,7 @@ export const RemotionRoot: FC = () => {
       />
       <Composition
         component={ArcScene16x9}
-        defaultProps={{ arcIndex: 2, scenePack: sampleScenePack }}
+        defaultProps={{ arcIndex: 2, audioPack: 'original', scenePack: sampleScenePack }}
         durationInFrames={300}
         fps={30}
         height={900}
@@ -87,12 +96,12 @@ export const RemotionRoot: FC = () => {
       />
       <Composition
         component={MasterConceptFilm16x9}
-        defaultProps={{ scenePack: sampleScenePack }}
+        defaultProps={{ audioPack: 'original', scenePack: sampleScenePack }}
         durationInFrames={960}
         fps={30}
         height={900}
         id="MasterConceptFilm16x9"
-        schema={ScenePackPropsSchema}
+        schema={MasterConceptFilmSchema}
         width={1600}
       />
     </>

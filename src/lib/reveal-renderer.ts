@@ -170,6 +170,27 @@ const drawTray = (
 export const REVEAL_DURATION_MS = 10500;
 export const POSTER_FRAME_PROGRESS = 0.82;
 
+const REVEAL_RECORDER_MIME_CANDIDATES = [
+  'video/webm;codecs=vp9',
+  'video/webm;codecs=vp8',
+  'video/webm',
+  'video/mp4;codecs=h264',
+  'video/mp4',
+] as const;
+
+type MediaRecorderCapability = Pick<typeof MediaRecorder, 'isTypeSupported'> | undefined;
+
+export const pickRevealRecorderMimeType = (mediaRecorder: MediaRecorderCapability = globalThis.MediaRecorder) => {
+  if (!mediaRecorder || typeof mediaRecorder.isTypeSupported !== 'function') {
+    return undefined;
+  }
+
+  return REVEAL_RECORDER_MIME_CANDIDATES.find((mimeType) => mediaRecorder.isTypeSupported(mimeType));
+};
+
+export const getRevealClipFileExtension = (mimeType: string | undefined) =>
+  mimeType?.toLowerCase().includes('mp4') ? 'mp4' : 'webm';
+
 export const drawRevealFrame = (
   canvas: HTMLCanvasElement,
   scenePack: ScenePack,
@@ -332,14 +353,15 @@ export const recordRevealClip = async (scenePack: ScenePack) => {
   canvas.width = scenePack.visual.canvasSize.width;
   canvas.height = scenePack.visual.canvasSize.height;
 
-  if (typeof canvas.captureStream !== 'function') {
+  if (typeof canvas.captureStream !== 'function' || typeof MediaRecorder !== 'function') {
     throw new Error('Your browser does not support video capture for this clip export.');
   }
 
   const stream = canvas.captureStream(30);
-  const recorder = new MediaRecorder(stream, {
-    mimeType: 'video/webm;codecs=vp9',
-  });
+  const mimeType = pickRevealRecorderMimeType(MediaRecorder);
+  const recorder = mimeType
+    ? new MediaRecorder(stream, { mimeType })
+    : new MediaRecorder(stream);
   const chunks: Blob[] = [];
 
   recorder.ondataavailable = (event) => {
@@ -362,5 +384,5 @@ export const recordRevealClip = async (scenePack: ScenePack) => {
     recorder.stop();
   });
 
-  return new Blob(chunks, { type: 'video/webm' });
+  return new Blob(chunks, { type: mimeType ?? recorder.mimeType ?? 'video/webm' });
 };

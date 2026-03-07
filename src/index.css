@@ -1,6 +1,6 @@
 @font-face {
   font-family: 'OpenAI Sans';
-  src: url('/fonts/OpenAISans-Regular.ttf') format('truetype');
+  src: url('./assets/fonts/OpenAISans-Regular.ttf') format('truetype');
   font-style: normal;
   font-weight: 400;
   font-display: swap;
@@ -8,7 +8,7 @@
 
 @font-face {
   font-family: 'OpenAI Sans';
-  src: url('/fonts/OpenAISans-Medium.ttf') format('truetype');
+  src: url('./assets/fonts/OpenAISans-Medium.ttf') format('truetype');
   font-style: normal;
   font-weight: 500;
   font-display: swap;
@@ -16,7 +16,7 @@
 
 @font-face {
   font-family: 'OpenAI Sans';
-  src: url('/fonts/OpenAISans-Semibold.ttf') format('truetype');
+  src: url('./assets/fonts/OpenAISans-Semibold.ttf') format('truetype');
   font-style: normal;
   font-weight: 600;
   font-display: swap;
@@ -24,7 +24,7 @@
 
 @font-face {
   font-family: 'OpenAI Sans';
-  src: url('/fonts/OpenAISans-Bold.ttf') format('truetype');
+  src: url('./assets/fonts/OpenAISans-Bold.ttf') format('truetype');
   font-style: normal;
   font-weight: 700;
   font-display: swap;

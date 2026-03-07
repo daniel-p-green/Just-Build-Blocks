@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { Audio } from '@remotion/media';
 import type { FC, ReactNode } from 'react';
 import {
@@ -14,6 +16,7 @@ import {
   OPENAI_SANS_FAMILY,
   getBuildTableAppearance,
 } from '../lib/brand-system';
+import { resolveStaticCueAudioPath, type AudioPackId } from '../lib/audio-pack';
 import { type ScenePack } from '../lib/scene-pack';
 
 export const FONT_STACKS = {
@@ -420,30 +423,33 @@ export const FrameShell: FC<{
   );
 };
 
-export const CueLayer: FC<{ mode: 'reveal' | 'arc' | 'master' }> = ({ mode }) => {
+export const CueLayer: FC<{ mode: 'reveal' | 'arc' | 'master'; audioPack?: AudioPackId }> = ({
+  mode,
+  audioPack = 'original',
+}) => {
   const { fps } = useVideoConfig();
 
   return (
     <>
-      {mode === 'master' ? <Audio src={staticFile('audio/bed.wav')} volume={0.12} /> : null}
-      <Audio src={staticFile('audio/upload.wav')} volume={0.28} />
+      {mode === 'master' ? <Audio src={staticFile(resolveStaticCueAudioPath('bed', audioPack))} volume={0.12} /> : null}
+      <Audio src={staticFile(resolveStaticCueAudioPath('upload', audioPack))} volume={0.28} />
       <Sequence from={Math.round(0.7 * fps)}>
-        <Audio src={staticFile('audio/quantize.wav')} volume={0.22} />
+        <Audio src={staticFile(resolveStaticCueAudioPath('quantize', audioPack))} volume={0.22} />
       </Sequence>
       <Sequence from={Math.round(1.5 * fps)}>
-        <Audio src={staticFile('audio/build.wav')} volume={0.3} />
+        <Audio src={staticFile(resolveStaticCueAudioPath('build', audioPack))} volume={0.3} />
       </Sequence>
       <Sequence from={Math.round((mode === 'master' ? 4.4 : 3.6) * fps)}>
-        <Audio src={staticFile('audio/hero-reveal.wav')} volume={0.34} />
+        <Audio src={staticFile(resolveStaticCueAudioPath('hero-reveal', audioPack))} volume={0.34} />
       </Sequence>
       <Sequence from={Math.round((mode === 'master' ? 10.1 : 5.4) * fps)}>
-        <Audio src={staticFile('audio/sacred-line.wav')} volume={0.42} />
+        <Audio src={staticFile(resolveStaticCueAudioPath('sacred-line', audioPack))} volume={0.42} />
       </Sequence>
       <Sequence from={Math.round((mode === 'master' ? 14.2 : 7.2) * fps)}>
-        <Audio src={staticFile('audio/montage.wav')} volume={0.2} />
+        <Audio src={staticFile(resolveStaticCueAudioPath('montage', audioPack))} volume={0.2} />
       </Sequence>
       <Sequence from={Math.round((mode === 'master' ? 28 : 13.5) * fps)}>
-        <Audio src={staticFile('audio/resolve.wav')} volume={0.22} />
+        <Audio src={staticFile(resolveStaticCueAudioPath('resolve', audioPack))} volume={0.22} />
       </Sequence>
     </>
   );

@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 import {
   generatePromptConcept,
@@ -62,5 +62,23 @@ const conceptApiPlugin = () => ({
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/three/examples')) {
+            return 'three-extras';
+          }
+
+          if (id.includes('node_modules/three')) {
+            return 'three-vendor';
+          }
+        },
+      },
+    },
+  },
   plugins: [react(), conceptApiPlugin()],
+  test: {
+    isolate: false,
+  },
 });

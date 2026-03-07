@@ -1,0 +1,77 @@
+{
+  "packId": "cc0-finds-mapped-v1",
+  "status": "audition-ready",
+  "format": {
+    "codec": "pcm_s16le",
+    "sampleRate": 48000,
+    "channels": 2
+  },
+  "unchangedCues": [
+    "bed",
+    "sacred-line"
+  ],
+  "cues": [
+    {
+      "id": "upload",
+      "file": "upload.wav",
+      "durationSec": 0.8,
+      "sourceFile": "../bottle-lid-click.mp3",
+      "sourcePage": "https://freesound.org/s/634136/",
+      "intent": "intake, hand meeting surface, subtle latch"
+    },
+    {
+      "id": "quantize",
+      "file": "quantize.wav",
+      "durationSec": 0.62,
+      "sourceFile": "../metal-plastic-click-clack.mp3",
+      "sourcePage": "https://freesound.org/people/Geoff-Bremner-Audio/sounds/653234/",
+      "intent": "small click cluster for sorting and ordering"
+    },
+    {
+      "id": "build",
+      "file": "build.wav",
+      "durationSec": 1.15,
+      "sourceFile": "../plastic-tube-lid-pop-snap.mp3",
+      "sourcePage": "https://freesound.org/people/rifualk/sounds/623854/",
+      "intent": "assembly snap with more weight"
+    },
+    {
+      "id": "hero-reveal",
+      "file": "hero-reveal.wav",
+      "durationSec": 1.87,
+      "sourceFiles": [
+        "../plastic-click-hit.mp3",
+        "../metal-plastic-click-clack.mp3",
+        "../plastic-clicking-and-rattling.mp3"
+      ],
+      "sourcePages": [
+        "https://freesound.org/people/deleted_user_7146007/sounds/383863/",
+        "https://freesound.org/people/Geoff-Bremner-Audio/sounds/653234/",
+        "https://freesound.org/people/Creature%20SH/sounds/441349/"
+      ],
+      "intent": "premium reveal accent with layered click and short tactile tail"
+    },
+    {
+      "id": "montage",
+      "file": "montage.wav",
+      "durationSec": 2.2,
+      "sourceFile": "../plastic-clicking-and-rattling.mp3",
+      "sourcePage": "https://freesound.org/people/Creature%20SH/sounds/441349/",
+      "intent": "restrained mid-film tactile passage"
+    },
+    {
+      "id": "resolve",
+      "file": "resolve.wav",
+      "durationSec": 1.48,
+      "sourceFiles": [
+        "../bottle-lid-click.mp3",
+        "../plastic-clicking-and-rattling.mp3"
+      ],
+      "sourcePages": [
+        "https://freesound.org/s/634136/",
+        "https://freesound.org/people/Creature%20SH/sounds/441349/"
+      ],
+      "intent": "soft close, mechanical settle, gentle decay"
+    }
+  ]
+}

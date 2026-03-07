@@ -198,13 +198,18 @@ export const drawHeroCanvas = (
   const { width, height } = canvas;
   const variant = options?.variant ?? 'hero';
   const primaryBlue = BLOCK_TABLE_COLORS.orbitBlue;
+  const accent = scenePack.packaging.accentColor || BLOCK_TABLE_COLORS.orbitBlue;
   const red = BLOCK_TABLE_COLORS.signalRed;
   const yellow = BLOCK_TABLE_COLORS.brightYellow;
   const white = BLOCK_TABLE_COLORS.studioWhite;
   const graphite = BLOCK_TABLE_COLORS.graphiteInk;
 
   context.clearRect(0, 0, width, height);
-  context.fillStyle = '#edf3f9';
+  const pageGradient = context.createLinearGradient(0, 0, width, height);
+  pageGradient.addColorStop(0, '#eef3f9');
+  pageGradient.addColorStop(0.65, mix('#eef3f9', accent, 0.08));
+  pageGradient.addColorStop(1, '#e7edf6');
+  context.fillStyle = pageGradient;
   context.fillRect(0, 0, width, height);
 
   context.save();
@@ -218,17 +223,26 @@ export const drawHeroCanvas = (
 
   drawRoundedRect(context, 88, 82, width - 176, height - 164, 28);
   const boxGradient = context.createLinearGradient(88, 82, width - 88, height - 82);
-  boxGradient.addColorStop(0, mix(primaryBlue, '#0b2c75', 0.06));
-  boxGradient.addColorStop(0.58, primaryBlue);
-  boxGradient.addColorStop(1, mix(primaryBlue, '#081427', 0.12));
+  boxGradient.addColorStop(0, mix(primaryBlue, accent, 0.12));
+  boxGradient.addColorStop(0.42, primaryBlue);
+  boxGradient.addColorStop(0.74, mix(primaryBlue, accent, 0.22));
+  boxGradient.addColorStop(1, mix(primaryBlue, '#081427', 0.16));
   context.fillStyle = boxGradient;
   context.fill();
 
   const glow = context.createRadialGradient(width * 0.68, height * 0.32, 40, width * 0.68, height * 0.32, 420);
-  glow.addColorStop(0, rgba('#ffffff', 0.2));
+  glow.addColorStop(0, rgba(mix(accent, '#ffffff', 0.66), 0.26));
   glow.addColorStop(1, rgba('#ffffff', 0));
   context.fillStyle = glow;
   context.fillRect(88, 82, width - 176, height - 164);
+
+  context.fillStyle = rgba('#ffffff', 0.1);
+  context.fillRect(356, 110, 8, height - 220);
+
+  drawRoundedRect(context, 374, 120, 670, 72, 18);
+  context.fillStyle = yellow;
+  context.fill();
+  drawStudBar(context, 402, 156, 612, yellow);
 
   drawRoundedRect(context, 122, 118, 216, 134, 24);
   context.fillStyle = red;
@@ -243,7 +257,7 @@ export const drawHeroCanvas = (
   context.fillStyle = rgba('#ffffff', 0.16);
   context.fill();
 
-  drawStudBar(context, 150, 296, 164, rgba('#ffffff', 0.6));
+  drawStudBar(context, 150, 296, 164, rgba(accent, 0.8));
   context.fillStyle = white;
   context.font = `700 26px ${OPENAI_SANS_FAMILY}`;
   context.fillText(scenePack.box.metadataRail[0]?.label ?? 'Builder age', 150, 346);
@@ -262,14 +276,9 @@ export const drawHeroCanvas = (
     railY += 82;
   });
 
-  drawRoundedRect(context, 374, 120, 670, 72, 18);
-  context.fillStyle = yellow;
-  context.fill();
-  drawStudBar(context, 402, 156, 612, yellow);
-
   context.fillStyle = graphite;
   context.font = `700 28px ${OPENAI_SANS_FAMILY}`;
-  context.fillText('Built with GPT-5.4 + Codex', 398, 166);
+  context.fillText('Collector-grade display set', 398, 166);
 
   context.fillStyle = white;
   context.font = `700 96px ${OPENAI_SANS_FAMILY}`;
@@ -281,13 +290,19 @@ export const drawHeroCanvas = (
   drawRoundedRect(context, 364, 346, 692, 334, 34);
   context.fillStyle = rgba('#ffffff', 0.08);
   context.fill();
+  context.strokeStyle = rgba(accent, 0.45);
+  context.lineWidth = 3;
+  context.stroke();
 
   drawRoundedRect(context, 406, 390, 608, 224, 26);
   context.fillStyle = 'rgba(255, 255, 255, 0.93)';
   context.fill();
+  context.strokeStyle = rgba(accent, 0.22);
+  context.lineWidth = 2;
+  context.stroke();
   context.save();
   context.globalAlpha = 0.22;
-  drawStudBar(context, 452, 416, 516, '#dbe5ef');
+  drawStudBar(context, 452, 416, 516, mix(accent, '#dbe5ef', 0.6));
   context.restore();
 
   const plinthShadow = context.createRadialGradient(700, 610, 40, 700, 610, 220);
@@ -316,12 +331,25 @@ export const drawHeroCanvas = (
       );
     });
 
+  drawRoundedRect(context, 438, 622, 544, 18, 9);
+  context.fillStyle = rgba(accent, 0.22);
+  context.fill();
+  drawRoundedRect(context, 454, 632, 510, 16, 8);
+  context.fillStyle = rgba('#101828', 0.22);
+  context.fill();
+
   context.fillStyle = white;
   context.font = `600 24px ${OPENAI_SANS_FAMILY}`;
   drawWrappedText(context, scenePack.box.heroCaption, 388, 716, 590, 34);
 
+  context.fillStyle = rgba('#ffffff', 0.82);
+  context.font = `700 22px ${OPENAI_SANS_FAMILY}`;
+  context.fillText(scenePack.setIdentity.launchLine.toUpperCase(), 390, 768);
+  context.font = `600 22px ${OPENAI_SANS_FAMILY}`;
+  context.fillText(`SKU ${scenePack.setIdentity.sku}`, 618, 768);
+
   drawRoundedRect(context, 1060, 118, 164, 164, 28);
-  context.fillStyle = rgba('#ffffff', 0.14);
+  context.fillStyle = rgba(accent, 0.18);
   context.fill();
   context.fillStyle = white;
   context.font = `700 32px ${OPENAI_SANS_FAMILY}`;
@@ -330,7 +358,7 @@ export const drawHeroCanvas = (
   context.fillText(String(scenePack.instructions.countTotals.totalPieces), 1092, 248);
 
   drawRoundedRect(context, 1060, 308, 164, 164, 28);
-  context.fillStyle = rgba('#ffffff', 0.14);
+  context.fillStyle = rgba(accent, 0.16);
   context.fill();
   context.fillStyle = white;
   context.font = `700 32px ${OPENAI_SANS_FAMILY}`;
@@ -346,7 +374,7 @@ export const drawHeroCanvas = (
   context.fillText(scenePack.input.kind === 'prompt' ? 'FROM TEXT' : 'FROM IMAGE', 1088, 564);
 
   drawRoundedRect(context, 1060, 644, 164, 92, 28);
-  context.fillStyle = rgba('#ffffff', 0.14);
+  context.fillStyle = rgba(accent, 0.2);
   context.fill();
   context.fillStyle = white;
   context.font = `700 22px ${OPENAI_SANS_FAMILY}`;

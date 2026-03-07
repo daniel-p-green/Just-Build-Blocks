@@ -2,15 +2,17 @@ import type { FC } from 'react';
 import { AbsoluteFill, Sequence, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { z } from 'zod';
 
+import type { AudioPackId } from '../lib/audio-pack';
 import { ScenePackSchema } from '../lib/scene-pack';
 import { RevealScene16x9 } from './RevealScene16x9';
 import { BlocksBadge, CueLayer, FONT_STACKS, FrameShell } from './shared';
 
 export type MasterConceptFilmProps = {
+  audioPack?: AudioPackId;
   scenePack: z.infer<typeof ScenePackSchema>;
 };
 
-export const MasterConceptFilm16x9: FC<MasterConceptFilmProps> = ({ scenePack }) => {
+export const MasterConceptFilm16x9: FC<MasterConceptFilmProps> = ({ audioPack = 'original', scenePack }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const outroFrame = Math.max(0, frame - 28 * fps);
@@ -22,9 +24,10 @@ export const MasterConceptFilm16x9: FC<MasterConceptFilmProps> = ({ scenePack })
 
   return (
     <AbsoluteFill>
-      <CueLayer mode="master" />
+      <CueLayer audioPack={audioPack} mode="master" />
       <Sequence durationInFrames={12 * fps} from={0}>
         <RevealScene16x9
+          audioPack={audioPack}
           lensText={{
             label: 'Instant Magic',
             headline: scenePack.storyArcs[0]?.headline ?? '',
@@ -37,6 +40,7 @@ export const MasterConceptFilm16x9: FC<MasterConceptFilmProps> = ({ scenePack })
       </Sequence>
       <Sequence durationInFrames={10 * fps} from={12 * fps}>
         <RevealScene16x9
+          audioPack={audioPack}
           lensText={{
             label: 'Nostalgia Bridge',
             headline: scenePack.storyArcs[1]?.headline ?? '',
@@ -49,6 +53,7 @@ export const MasterConceptFilm16x9: FC<MasterConceptFilmProps> = ({ scenePack })
       </Sequence>
       <Sequence durationInFrames={6 * fps} from={22 * fps}>
         <RevealScene16x9
+          audioPack={audioPack}
           lensText={{
             label: 'World Building',
             headline: scenePack.storyArcs[2]?.headline ?? '',

@@ -5,6 +5,13 @@ import {
   type BlockColor,
   type VisibleBounds,
 } from './block-engine';
+import {
+  BRICKLINK_BRICK_PARTS,
+  BRICKLINK_PLATE_PARTS,
+  buildBricklinkManifestPayload,
+  getBricklinkColorRef,
+  getBricklinkPartRef,
+} from './bricklink-snapshot';
 import type { ConceptInput } from './concept-input';
 import { createStoredZip } from './zip';
 
@@ -17,14 +24,23 @@ export type BuildIntent = {
   targetScale: 'desk';
 };
 
+export type SetArchetype = 'monolith' | 'badge-plaque' | 'emblem-relief' | 'medallion';
+
 export type BrickSetSpec = {
+  sku: string;
   buildId: string;
   collection: string;
+  launchLine: string;
   flagshipName: string;
+  displayTitle?: string;
+  displaySubtitle?: string;
   packagingBrief: string;
   silhouetteGoal: string;
   modelStyle: 'monochrome-signature' | 'color-display';
   instructionTheme: 'airy-sky-blue';
+  accentColor: string;
+  archetype: SetArchetype;
+  packagingAngle: 'three-quarter-left' | 'three-quarter-right';
   targetStuds: {
     width: number;
     depth: number;
@@ -35,6 +51,8 @@ export type BrickSetSpec = {
   reliefLayers: number;
   supportStrategy: 'flat-display-plaque' | 'plinth-supported';
 };
+
+export type SetSpec = BrickSetSpec;
 
 export type ModelTransform = {
   matrix: [number, number, number, number, number, number, number, number, number];
@@ -52,6 +70,12 @@ export type ModelAssembly = {
 
 export type ModelPart = {
   assemblyId: string;
+  bricklinkAvailableInColor: boolean;
+  bricklinkCatalogUrl: string | null;
+  bricklinkColorId: number | null;
+  bricklinkColorName: string | null;
+  bricklinkItemNo: string | null;
+  bricklinkItemType: 'P' | null;
   colorCode: number;
   colorId: BlockColor['id'];
   colorName: string;
@@ -98,6 +122,12 @@ export type ModelIR = {
 };
 
 export type SetPartManifestItem = {
+  bricklinkAvailableInColor: boolean;
+  bricklinkCatalogUrl: string | null;
+  bricklinkColorId: number | null;
+  bricklinkColorName: string | null;
+  bricklinkItemNo: string | null;
+  bricklinkItemType: 'P' | null;
   colorCode: number;
   colorId: string;
   colorName: string;
@@ -138,6 +168,8 @@ export type ModelValidationIssue = {
   code:
     | 'assembly-parent-missing'
     | 'assembly-unknown'
+    | 'bricklink-color-unavailable'
+    | 'bricklink-part-missing'
     | 'duplicate-part-id'
     | 'invalid-transform'
     | 'missing-part-definition'
@@ -203,27 +235,17 @@ const LDR_COLOR_CODES: Record<BlockColor['id'], number> = {
   black: 0,
 };
 
-const PLATE_PARTS: CatalogPart[] = [
-  { category: 'plate', id: '3034.dat', name: 'Plate 2 x 8', studsX: 2, studsZ: 8 },
-  { category: 'plate', id: '3795.dat', name: 'Plate 2 x 6', studsX: 2, studsZ: 6 },
-  { category: 'plate', id: '3020.dat', name: 'Plate 2 x 4', studsX: 2, studsZ: 4 },
-  { category: 'plate', id: '3021.dat', name: 'Plate 2 x 3', studsX: 2, studsZ: 3 },
-  { category: 'plate', id: '3022.dat', name: 'Plate 2 x 2', studsX: 2, studsZ: 2 },
-  { category: 'plate', id: '3710.dat', name: 'Plate 1 x 4', studsX: 1, studsZ: 4 },
-  { category: 'plate', id: '3623.dat', name: 'Plate 1 x 3', studsX: 1, studsZ: 3 },
-  { category: 'plate', id: '3023.dat', name: 'Plate 1 x 2', studsX: 1, studsZ: 2 },
-  { category: 'plate', id: '3024.dat', name: 'Plate 1 x 1', studsX: 1, studsZ: 1 },
-];
+const toCatalogPart = (part: (typeof BRICKLINK_PLATE_PARTS | typeof BRICKLINK_BRICK_PARTS)[number]): CatalogPart => ({
+  category: part.category,
+  id: part.ldrawPartId,
+  name: part.bricklinkName,
+  studsX: part.studsX,
+  studsZ: part.studsZ,
+});
 
-const BRICK_PARTS: CatalogPart[] = [
-  { category: 'brick', id: '3007.dat', name: 'Brick 2 x 8', studsX: 2, studsZ: 8 },
-  { category: 'brick', id: '2456.dat', name: 'Brick 2 x 6', studsX: 2, studsZ: 6 },
-  { category: 'brick', id: '3001.dat', name: 'Brick 2 x 4', studsX: 2, studsZ: 4 },
-  { category: 'brick', id: '3003.dat', name: 'Brick 2 x 2', studsX: 2, studsZ: 2 },
-  { category: 'brick', id: '3010.dat', name: 'Brick 1 x 4', studsX: 1, studsZ: 4 },
-  { category: 'brick', id: '3004.dat', name: 'Brick 1 x 2', studsX: 1, studsZ: 2 },
-  { category: 'brick', id: '3005.dat', name: 'Brick 1 x 1', studsX: 1, studsZ: 1 },
-];
+const PLATE_PARTS: CatalogPart[] = BRICKLINK_PLATE_PARTS.map(toCatalogPart);
+
+const BRICK_PARTS: CatalogPart[] = BRICKLINK_BRICK_PARTS.map(toCatalogPart);
 
 const PART_CATALOG = [...PLATE_PARTS, ...BRICK_PARTS];
 
@@ -231,6 +253,34 @@ const getColorById = (colorId: string) =>
   Object.values(BLOCK_PALETTE).find((color) => color.id === colorId) ?? BLOCK_PALETTE.green;
 
 const getColorCode = (colorId: BlockColor['id']) => LDR_COLOR_CODES[colorId] ?? 16;
+
+const getBricklinkMetadata = (partId: string, colorId: BlockColor['id']) => {
+  const bricklinkPartRef = getBricklinkPartRef(partId);
+  const bricklinkColorRef = getBricklinkColorRef(colorId);
+  const hasVerifiedColorPairing =
+    bricklinkPartRef !== undefined &&
+    bricklinkColorRef !== undefined &&
+    bricklinkPartRef.allowedBricklinkColorIds.includes(bricklinkColorRef.bricklinkColorId);
+  const bricklinkAvailableInColor =
+    hasVerifiedColorPairing;
+
+  return {
+    bricklinkAvailableInColor,
+    bricklinkCatalogUrl: bricklinkPartRef?.bricklinkCatalogUrl ?? null,
+    bricklinkColorId: bricklinkAvailableInColor ? bricklinkColorRef?.bricklinkColorId ?? null : null,
+    bricklinkColorName: bricklinkAvailableInColor ? bricklinkColorRef?.bricklinkColorName ?? null : null,
+    bricklinkItemNo: bricklinkPartRef?.bricklinkItemNo ?? null,
+    bricklinkItemType: bricklinkPartRef?.bricklinkItemType ?? null,
+  } satisfies Pick<
+    ModelPart,
+    | 'bricklinkAvailableInColor'
+    | 'bricklinkCatalogUrl'
+    | 'bricklinkColorId'
+    | 'bricklinkColorName'
+    | 'bricklinkItemNo'
+    | 'bricklinkItemType'
+  >;
+};
 
 const slugify = (value: string) =>
   value
@@ -245,6 +295,26 @@ const createBuildId = (brandName: string) =>
     .slice(0, 3)
     .toUpperCase()
     .padEnd(3, 'X')}`;
+
+const inferAccentColor = (brandName: string) => {
+  if (/codex/i.test(brandName)) {
+    return BLOCK_PALETTE.blue.hex;
+  }
+
+  if (/bloom|openai/i.test(brandName)) {
+    return BLOCK_PALETTE.green.hex;
+  }
+
+  if (/collective/i.test(brandName)) {
+    return '#6D5EF8';
+  }
+
+  if (/kansas city|kc\b/i.test(brandName)) {
+    return BLOCK_PALETTE.red.hex;
+  }
+
+  return BLOCK_PALETTE.yellow.hex;
+};
 
 const getVisibleCells = (build: BlockBuild, bounds: VisibleBounds) =>
   build.cells
@@ -457,9 +527,11 @@ const addPlacements = ({
     const centerZ =
       ((z + part.studsZ / 2) - studFootprint.depth / 2) * LDU_PER_STUD;
     const centerY = -((layerStart + (part.category === 'brick' ? 1.5 : 0.5)) * LDU_PER_PLATE);
+    const bricklinkMetadata = getBricklinkMetadata(part.id, color.id);
 
     return {
       assemblyId,
+      ...bricklinkMetadata,
       colorCode: getColorCode(color.id),
       colorId: color.id,
       colorName: color.name,
@@ -713,10 +785,12 @@ export const buildBrickSetSpec = ({
   const plinthDepthStuds = flagship ? 4 : 0;
 
   return {
+    sku: createBuildId(brandName),
     buildId: createBuildId(brandName),
     collection: flagship
       ? 'Codex Signature Set'
       : 'Custom Creator Series',
+    launchLine: flagship ? 'Signature Collection' : 'Commissioned Builds',
     flagshipName: flagship
       ? 'Codex Monolith'
       : `${brandName} Display Set`,
@@ -732,6 +806,9 @@ export const buildBrickSetSpec = ({
         : 'Hold the mark silhouette cleanly at desk scale while keeping the model physically plausible.',
     modelStyle: flagship ? 'monochrome-signature' : 'color-display',
     instructionTheme: 'airy-sky-blue',
+    accentColor: inferAccentColor(brandName),
+    archetype: flagship ? 'medallion' : 'badge-plaque',
+    packagingAngle: flagship ? 'three-quarter-left' : 'three-quarter-right',
     targetStuds: {
       width: visibleWidth + frameMarginStuds * 2,
       depth: visibleDepth + frameMarginStuds * 2 + plinthDepthStuds,
@@ -756,6 +833,12 @@ export const buildPartManifest = (model: ModelIR): SetPartManifestItem[] =>
       }
 
       manifest[key] = {
+        bricklinkAvailableInColor: part.bricklinkAvailableInColor,
+        bricklinkCatalogUrl: part.bricklinkCatalogUrl,
+        bricklinkColorId: part.bricklinkColorId,
+        bricklinkColorName: part.bricklinkColorName,
+        bricklinkItemNo: part.bricklinkItemNo,
+        bricklinkItemType: part.bricklinkItemType,
         colorCode: part.colorCode,
         colorId: part.colorId,
         colorName: part.colorName,
@@ -770,6 +853,13 @@ export const buildPartManifest = (model: ModelIR): SetPartManifestItem[] =>
       return manifest;
     }, {}),
   ).sort((left, right) => right.count - left.count || left.partId.localeCompare(right.partId));
+
+export const summarizeBricklinkSourcing = <
+  T extends Pick<SetPartManifestItem, 'bricklinkAvailableInColor' | 'bricklinkItemNo'>
+>(
+  items: T[],
+) =>
+  buildBricklinkManifestPayload(items);
 
 export const buildInstructionPlan = (model: ModelIR): InstructionPlan => {
   const countForAssembly = (assemblyId: string) =>
@@ -943,6 +1033,10 @@ export const validateModelIR = ({
   const assemblyIds = new Set(model.assemblies.map((assembly) => assembly.id));
   const partIds = new Set<string>();
   const occupied = new Set<string>();
+  const warningCodes = new Set<ModelValidationIssue['code']>([
+    'bricklink-color-unavailable',
+    'bricklink-part-missing',
+  ]);
 
   model.assemblies.forEach((assembly) => {
     if (assembly.parentId && !assemblyIds.has(assembly.parentId)) {
@@ -965,6 +1059,20 @@ export const validateModelIR = ({
       issues.push({
         code: 'missing-part-definition',
         message: `Part ${part.id} uses unknown catalog part ${part.partId}.`,
+      });
+    }
+
+    if (!part.bricklinkItemNo || !part.bricklinkItemType) {
+      issues.push({
+        code: 'bricklink-part-missing',
+        message: `Part ${part.id} is missing BrickLink catalog mapping for ${part.partId}.`,
+      });
+    }
+
+    if (!part.bricklinkAvailableInColor) {
+      issues.push({
+        code: 'bricklink-color-unavailable',
+        message: `Part ${part.id} does not have a verified BrickLink color pairing for ${part.colorName}.`,
       });
     }
 
@@ -1029,7 +1137,7 @@ export const validateModelIR = ({
       uniqueColorBins: model.colorBins.length,
       uniquePartKinds: new Set(model.parts.map((part) => part.partId)).size,
     },
-    valid: issues.length === 0,
+    valid: issues.every((issue) => warningCodes.has(issue.code)),
   };
 };
 
@@ -1314,15 +1422,17 @@ export const buildRealSet = ({
   build,
   dominantColor,
   input,
+  setSpec,
 }: {
   brandName: string;
   build: BlockBuild;
   dominantColor?: BlockColor;
   input: ConceptInput;
+  setSpec?: BrickSetSpec;
 }): RealSetBuild => {
   const workingBuild = /codex|openai/i.test(brandName) ? trimBorderBackground(build) : build;
   const intent = buildBuildIntent({ brandName, input });
-  const spec = buildBrickSetSpec({ brandName, build: workingBuild, input });
+  const spec = setSpec ?? buildBrickSetSpec({ brandName, build: workingBuild, input });
   const lockedDominantColor = dominantColor ?? workingBuild.dominantColor ?? BLOCK_PALETTE.green;
   const displayGrid = buildDisplayGrid({
     build: workingBuild,
@@ -1356,8 +1466,8 @@ export const buildRealSet = ({
       instructionPlan,
       ioEntryNames: ioBundle.entryNames,
       ioFileBytes: ioBundle.ioFileBytes,
-      ioFileName: `${slugify(brandName)}-signature-set.io`,
-      mpdFileName: `${slugify(brandName)}-signature-set.mpd`,
+      ioFileName: `${slugify(brandName)}-${slugify(spec.sku)}.io`,
+      mpdFileName: `${slugify(brandName)}-${slugify(spec.sku)}.mpd`,
       mpdText,
       renderScene: {
         background: 'openai-shell',

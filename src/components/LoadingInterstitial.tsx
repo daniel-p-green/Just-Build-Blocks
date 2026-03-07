@@ -18,12 +18,12 @@ export function LoadingInterstitial({ kind, open }: LoadingInterstitialProps) {
         </div>
 
         <div className="loading-copy">
-          <p className="eyebrow">Signature set in progress</p>
+          <p className="eyebrow">Building your set</p>
           <h2>Preparing your signature set</h2>
           <p>
             {kind === 'prompt'
-              ? 'Shaping your idea into a buildable collectible with box, studio, and instruction-ready structure.'
-              : 'Translating your mark into a buildable collectible with clean geometry, wrapper energy, and keepsake-ready outputs.'}
+              ? 'Turning your description into box art, build phases, and a finished collectible you can keep.'
+              : 'Turning your artwork into a set reveal, a guided build, and a finished bundle you can keep.'}
           </p>
         </div>
       </div>

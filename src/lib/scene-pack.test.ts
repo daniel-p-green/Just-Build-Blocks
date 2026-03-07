@@ -80,11 +80,30 @@ describe('buildScenePack', () => {
     expect(scenePack.exports.filmFileName).toBe('codex-blocks-reveal-film.mp4');
     expect(scenePack.model.canonical).toBe('ModelIR');
     expect(scenePack.model.validation.valid).toBe(true);
+    expect(scenePack.model.partManifest[0]).toMatchObject({
+      bricklinkAvailableInColor: true,
+      bricklinkCatalogUrl: expect.stringContaining('bricklink.com/v2/catalog/catalogitem.page?P='),
+      bricklinkColorId: expect.any(Number),
+      bricklinkColorName: expect.any(String),
+      bricklinkItemNo: expect.any(String),
+      bricklinkItemType: 'P',
+    });
+    expect(scenePack.instructions.partManifest[0]).toMatchObject({
+      bricklinkAvailableInColor: true,
+      bricklinkItemNo: expect.any(String),
+    });
     expect(scenePack.build.visibleBlockCount).toBeGreaterThan(0);
     expect(scenePack.build.visibleBlockCount).toBeLessThanOrEqual(scenePack.build.grid.cells.length);
     expect(scenePack.input.kind).toBe('image');
     expect(scenePack.box.badge.text).toBe('BLOCKS');
+    expect(scenePack.setIdentity.sku).toBe('CX-COD');
+    expect(scenePack.setIdentity.launchLine).toBe('Signature Collection');
+    expect(scenePack.setIdentity.accentColor).toBe('#0055BF');
+    expect(scenePack.packaging.accentColor).toBe('#0055BF');
+    expect(scenePack.packaging.heroShotAngle).toBe('three-quarter-left');
+    expect(scenePack.builder.accentColor).toBe('#0055BF');
     expect(scenePack.builder.cameraPreset).toBe('hero-angle');
+    expect(scenePack.instructions.bookTitle).toBe('Codex Monolith Instruction Book');
     expect(scenePack.instructions.steps.length).toBeGreaterThan(2);
     expect(scenePack.commerce.status).toBe('coming-soon');
   });
@@ -121,6 +140,53 @@ describe('buildScenePack', () => {
     });
 
     expect(ScenePackSchema.safeParse(scenePack).success).toBe(true);
+  });
+
+  it('rejects scene payloads whose manifest roles drift beyond the real-set contract', () => {
+    const build = buildBlockBuildFromImageData(
+      {
+        width: 2,
+        height: 2,
+        data: flattenPixels([
+          [0, 200, 83, 255],
+          [0, 200, 83, 255],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+        ]),
+      },
+      { columns: 1 },
+    );
+
+    const scenePack = buildScenePack({
+      brandName: 'OpenAI Devs',
+      fileName: 'openai-devs.png',
+      build,
+      dominantColor: BLOCK_PALETTE.green,
+      input: {
+        kind: 'image',
+        brandName: 'OpenAI Devs',
+        fileMeta: {
+          fileName: 'openai-devs.png',
+        },
+      },
+      revealMode: 'faithful',
+      visualPresetId: 'primary-play',
+    });
+
+    const invalidScenePack = {
+      ...scenePack,
+      model: {
+        ...scenePack.model,
+        partManifest: [
+          {
+            ...scenePack.model.partManifest[0]!,
+            role: 'mystery-role',
+          },
+        ],
+      },
+    };
+
+    expect(ScenePackSchema.safeParse(invalidScenePack).success).toBe(false);
   });
 
   it('keeps the build deterministic across reveal modes while changing the world plan', () => {
@@ -228,6 +294,8 @@ describe('buildScenePack', () => {
     expect(scenePack.box.title).toBe('Fries Truck');
     expect(scenePack.box.subtitle).toBe('Street snack sprint');
     expect(scenePack.box.coverArtMode).toBe('prompt-concept');
+    expect(scenePack.setIdentity.sku).toBe('CX-FRI');
+    expect(scenePack.instructions.bookTitle).toBe('Fries Truck Instruction Book');
     expect(scenePack.commerce.ctaLabel).toBe('Buy the bricks');
   });
 });

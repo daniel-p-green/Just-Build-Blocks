@@ -55,6 +55,8 @@ npm install
 npm run dev
 ```
 
+For visual verification and manual browser passes, use the installed Codex `playwright-interactive` skill from this workspace. That workflow expects `js_repl` to be enabled in Codex.
+
 Prompt mode requires `OPENAI_API_KEY`. Without it:
 
 - image upload still works

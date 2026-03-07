@@ -2,11 +2,13 @@ import type { FC } from 'react';
 import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { z } from 'zod';
 
+import type { AudioPackId } from '../lib/audio-pack';
 import { buildExperiencePlan } from '../lib/experience-plan';
 import { ScenePackSchema } from '../lib/scene-pack';
 import { BlockGridMark, BlocksBadge, CueLayer, FONT_STACKS, FrameShell, WorldChipCloud } from './shared';
 
 export type RevealSceneProps = {
+  audioPack?: AudioPackId;
   revealMode?: 'faithful' | 'imagination';
   scenePack: z.infer<typeof ScenePackSchema>;
   withCues?: boolean;
@@ -18,6 +20,7 @@ export type RevealSceneProps = {
 };
 
 export const RevealScene16x9: FC<RevealSceneProps> = ({
+  audioPack = 'original',
   revealMode,
   scenePack,
   withCues = true,
@@ -70,7 +73,7 @@ export const RevealScene16x9: FC<RevealSceneProps> = ({
 
   return (
     <FrameShell scenePack={revealScenePack}>
-      {withCues ? <CueLayer mode={lensText ? 'arc' : 'reveal'} /> : null}
+      {withCues ? <CueLayer audioPack={audioPack} mode={lensText ? 'arc' : 'reveal'} /> : null}
       <AbsoluteFill style={{ padding: 8 }}>
         <div
           style={{
