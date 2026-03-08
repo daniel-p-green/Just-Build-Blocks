@@ -124,6 +124,10 @@ const {
     getCenter(vector: MockVector3) {
       return vector.set(0, 0, 0);
     }
+
+    getSize(vector: MockVector3) {
+      return vector.set(8, 8, 2);
+    }
   }
 
   class MockPerspectiveCamera extends MockObject3D {

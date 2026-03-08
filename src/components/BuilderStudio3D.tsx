@@ -13,7 +13,6 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
-  PCFSoftShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
@@ -45,11 +44,11 @@ const PART_COLORS = Object.values(BLOCK_PALETTE).reduce<Record<string, string>>(
 const getBoardColor = (scenePack: ScenePack) => {
   switch (scenePack.builder.boardTheme) {
     case 'night-bench':
-      return '#152139';
+      return '#18233c';
     case 'playfield':
       return '#d9ebd4';
     default:
-      return '#eef3f8';
+      return '#dde6f0';
   }
 };
 
@@ -148,45 +147,44 @@ export function BuilderStudio3D({
       preserveDrawingBuffer: true,
     });
     const scene = new Scene();
-    const camera = new PerspectiveCamera(34, 16 / 9, 0.1, 1000);
+    const camera = new PerspectiveCamera(32, 16 / 9, 0.1, 1000);
     const controls = new OrbitControls(camera, canvas);
     const partGroup = new Group();
     const boardGroup = new Group();
     const meshes: BuilderStudioMesh[] = [];
     const accentColor = new Color(scenePack.builder.accentColor);
 
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 1.02;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = PCFSoftShadowMap;
     scene.fog = new FogExp2(accentColor.clone().lerp(new Color('#ffffff'), 0.94), 0.018);
 
     scene.add(partGroup);
     scene.add(boardGroup);
-    scene.add(new AmbientLight(0xffffff, 0.52));
-    scene.add(new HemisphereLight(0xf7fbff, 0xd7e2ee, 1.15));
+    scene.add(new AmbientLight(0xffffff, 0.42));
+    scene.add(new HemisphereLight(0xf7fbff, 0xcfd8e6, 1));
 
-    const keyLight = new DirectionalLight(0xffffff, 1.55);
-    keyLight.position.set(9, 15, 14);
+    const keyLight = new DirectionalLight(0xffffff, 1.95);
+    keyLight.position.set(10, 14, 10);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
     keyLight.shadow.mapSize.height = 2048;
     keyLight.shadow.radius = 8;
     scene.add(keyLight);
 
-    const fillLight = new DirectionalLight(0xf6fbff, 0.8);
-    fillLight.position.set(-10, 9, 12);
+    const fillLight = new DirectionalLight(0xe9f1ff, 0.86);
+    fillLight.position.set(-8, 7, 12);
     scene.add(fillLight);
 
-    const rimLight = new DirectionalLight(accentColor, 0.84);
-    rimLight.position.set(-8, 10, 18);
+    const rimLight = new DirectionalLight(accentColor, 0.72);
+    rimLight.position.set(-6, 8, 16);
     scene.add(rimLight);
 
-    const accentLight = new SpotLight(accentColor, 0.64, 70, Math.PI / 5, 0.32, 1.4);
-    accentLight.position.set(-6, 7, 12);
+    const accentLight = new SpotLight(accentColor, 0.68, 70, Math.PI / 4.5, 0.32, 1.25);
+    accentLight.position.set(-5, 8, 12);
     accentLight.target.position.set(0, 0.5, 0);
     scene.add(accentLight);
     scene.add(accentLight.target);
@@ -196,9 +194,9 @@ export function BuilderStudio3D({
     const backdrop = new Mesh(
       new BoxGeometry(boardWidth + 8, boardHeight + 10, 0.8),
       new MeshStandardMaterial({
-        color: accentColor.clone().lerp(new Color('#f9fbfe'), 0.94),
+        color: accentColor.clone().lerp(new Color('#d8e3ef'), 0.84),
         metalness: 0.02,
-        roughness: 0.98,
+        roughness: 0.92,
       }),
     );
     backdrop.position.set(0, 0.4, -3.8);
@@ -301,10 +299,12 @@ export function BuilderStudio3D({
       const geometry = new BoxGeometry(width, height, depth);
       const material = new MeshPhysicalMaterial({
         color: PART_COLORS[part.colorId] ?? '#101828',
-        metalness: part.colorId === 'white' ? 0.02 : 0.18,
-        roughness: part.colorId === 'white' ? 0.42 : 0.24,
-        clearcoat: part.colorId === 'white' ? 0.84 : 0.74,
-        clearcoatRoughness: part.colorId === 'white' ? 0.22 : 0.16,
+        emissive: PART_COLORS[part.colorId] ?? '#101828',
+        emissiveIntensity: part.colorId === 'white' ? 0 : 0.015,
+        metalness: part.colorId === 'white' ? 0.03 : 0.12,
+        roughness: part.colorId === 'white' ? 0.32 : 0.24,
+        clearcoat: part.colorId === 'white' ? 0.8 : 0.76,
+        clearcoatRoughness: part.colorId === 'white' ? 0.16 : 0.14,
       });
       const mesh = new Mesh(geometry, material);
       const stepIndex = assemblyStepLookup[part.assemblyId] ?? 0;
@@ -325,22 +325,29 @@ export function BuilderStudio3D({
       });
     });
 
+    partGroup.rotation.y = -Math.PI * 0.22;
+    partGroup.rotation.x = Math.PI * 0.05;
+
     const bounds = new Box3().setFromObject(partGroup);
     const center = bounds.getCenter(new Vector3());
+    const size = bounds.getSize(new Vector3());
+    const maxDimension = Math.max(size.x, size.y, size.z, 8);
     partGroup.position.sub(center);
     boardGroup.position.x -= center.x;
     boardGroup.position.y -= center.y;
     shadowFloor.position.x -= center.x;
     shadowFloor.position.y -= center.y;
 
-    camera.position.set(7.6, 4.8, 18);
-    controls.target.set(0, 1.7, 0.4);
+    camera.position.set(maxDimension * 1.18, maxDimension * 0.82, maxDimension * 1.46);
+    controls.target.set(0, Math.max(0.6, size.y * 0.1), 0.4);
     controls.enablePan = false;
     controls.enableDamping = true;
-    controls.maxDistance = 28;
-    controls.minDistance = 8;
+    controls.maxDistance = maxDimension * 4.8;
+    controls.minDistance = maxDimension * 1.1;
+    controls.minPolarAngle = Math.PI * 0.22;
+    controls.maxPolarAngle = Math.PI * 0.52;
     controls.autoRotate = displayStateRef.current.autoRotate;
-    controls.autoRotateSpeed = 1.4;
+    controls.autoRotateSpeed = 0.85;
     controls.update();
 
     const resize = () => {
